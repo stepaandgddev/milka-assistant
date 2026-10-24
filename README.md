@@ -26,6 +26,8 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 
 ## Quick Installation
 
+Run the installer from the project root — the folder that contains `main.py` and `requirements.txt`.
+
 ### Linux
 
 ```bash

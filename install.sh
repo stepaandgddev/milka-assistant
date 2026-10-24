@@ -112,6 +112,40 @@ if [ "$UNINSTALL" -eq 1 ]; then
     exit 0
 fi
 
+REQUIRED_FILES=(
+    main.py
+    ai_client.py
+    settings_dialog.py
+    settings_store.py
+    autostart.py
+    requirements.txt
+    milka_idle.svg
+)
+
+if [ "$SOURCE_DIR" = "$INSTALL_DIR" ]; then
+    SOURCE_CHECK_DIR="$INSTALL_DIR"
+else
+    SOURCE_CHECK_DIR="$SOURCE_DIR"
+fi
+
+MISSING=()
+for file in "${REQUIRED_FILES[@]}"; do
+    if [ ! -f "$SOURCE_CHECK_DIR/$file" ]; then
+        MISSING+=("$file")
+    fi
+done
+
+if [ ! -d "$SOURCE_CHECK_DIR/gifs" ]; then
+    MISSING+=("gifs/")
+fi
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo "Cannot install: missing required files in $SOURCE_CHECK_DIR:" >&2
+    printf '  - %s\n' "${MISSING[@]}" >&2
+    echo "Run install.sh from the project root (the folder that contains main.py and requirements.txt)." >&2
+    exit 1
+fi
+
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     echo "Python $PYTHON_BIN was not found. Install Python 3.10+." >&2
     exit 1

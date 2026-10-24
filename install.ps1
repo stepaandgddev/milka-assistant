@@ -124,6 +124,29 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Python 3.10 or newer is required.'
 }
 
+$requiredFiles = @(
+    'main.py',
+    'ai_client.py',
+    'settings_dialog.py',
+    'settings_store.py',
+    'autostart.py',
+    'requirements.txt',
+    'milka_idle.svg'
+)
+$sourceCheckDir = if ($SourceDir -eq $InstallDir) { $InstallDir } else { $SourceDir }
+$missingFiles = @()
+foreach ($file in $requiredFiles) {
+    if (-not (Test-Path (Join-Path $sourceCheckDir $file))) {
+        $missingFiles += $file
+    }
+}
+if (-not (Test-Path (Join-Path $sourceCheckDir 'gifs'))) {
+    $missingFiles += 'gifs\'
+}
+if ($missingFiles.Count -gt 0) {
+    throw "Cannot install: missing required files in $sourceCheckDir: $($missingFiles -join ', '). Run install.ps1 from the project root."
+}
+
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 $files = @(
