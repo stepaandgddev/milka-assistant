@@ -1,0 +1,218 @@
+# Milky
+
+An animated AI desktop pet: a transparent window, emotion animations, user memory, and support for local and cloud models.
+
+![Milky](gifs/milka_idle.gif)
+
+## Features
+
+- Transparent always-on-top window.
+- Animations for different emotions: `idle`, `listening`, `thinking`, `speaking`, `happy`, `sad`, `confused`, `sleepy`, `passive`, `music`.
+- Short, natural replies from Milky. The user can write in any language, and Milky can answer in whatever language and style feels natural to her.
+- Memory of user facts in `memory.json`.
+- Conversation history in `history.json`.
+- Support for Ollama, OpenRouter, Groq, and other OpenAI-compatible APIs.
+- Provider and model switching in the settings window.
+- Request caching for OpenRouter.
+- Opening links when the user explicitly asks.
+- System tray icon and context menu.
+- Linux and Windows installers with optional autostart.
+
+## Requirements
+
+- Python 3.10–3.15 (tested on Python 3.14).
+- Linux, Windows, or macOS.
+- Ollama with a tool-calling model, or an API key for an OpenAI-compatible service.
+
+## Quick Installation
+
+### Linux
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+The installer creates a virtual environment, installs dependencies, adds an application menu shortcut, and installs the `milky` command into `~/.local/bin`.
+
+Enable autostart immediately:
+
+```bash
+./install.sh --autostart
+```
+
+Or disable it:
+
+```bash
+./install.sh --no-autostart
+```
+
+Uninstall:
+
+```bash
+./install.sh --uninstall
+```
+
+### Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Enable autostart:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Autostart
+```
+
+Uninstall:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+```
+
+To skip all prompts, add `-Yes`. The default install directory is `%LOCALAPPDATA%\Milky`.
+
+After installation, autostart can be enabled or disabled in the settings window.
+
+### macOS
+
+Use the manual installation below. Enabling autostart in the settings window creates a LaunchAgent.
+
+## Manual Installation
+
+```bash
+git clone <repository-url>
+cd milky
+
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Windows:
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Create `.env` from `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+To use the experimental `web_search.py` module, install its dependencies separately:
+
+```bash
+pip install -r requirements-search.txt
+```
+
+## Ollama Setup
+
+Install Ollama and download a model:
+
+```bash
+ollama pull qwen2.5:3b
+ollama serve
+```
+
+By default, the app uses `http://127.0.0.1:11434` and the `qwen2.5:3b` model. You can change these values in `.env` or in the settings window.
+
+## API Setup
+
+Any OpenAI-compatible endpoint is supported. For OpenRouter or Groq, add the key to `.env`:
+
+```dotenv
+OPENROUTER_API_KEY=your_key
+OPENROUTER_MODEL=openai/gpt-4o-mini
+
+GROQ_API_KEY=your_key
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+After startup, the app reads settings from `settings.json`. If you changed `.env` after settings were already saved, update the endpoint in the settings window or delete `settings.json`.
+
+## Running
+
+```bash
+python main.py
+```
+
+## Controls
+
+- Left click — open the input field.
+- Drag — move the pet.
+- Enter — send a message.
+- Esc — close the input field.
+- Right click — open the context menu.
+- Double-click the tray icon — show or hide the window.
+
+## Autostart
+
+Autostart is controlled by the **Launch Milky at login** checkbox in the app settings.
+
+The autostart entry is created at:
+
+- Linux: `~/.config/autostart/milky.desktop`.
+- Windows: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\milky-autostart.cmd`.
+- macOS: `~/Library/LaunchAgents/com.milky.pet.plist`.
+
+When installing with `install.sh` or `install.ps1`, autostart can be enabled immediately or left disabled.
+
+## Environment Variables
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OLLAMA_URL` | Ollama address | `http://127.0.0.1:11434` |
+| `OLLAMA_MODEL` | Ollama model | `qwen2.5:3b` |
+| `OPENROUTER_API_KEY` | OpenRouter API key | empty |
+| `OPENROUTER_MODEL` | OpenRouter model | `openai/gpt-4o-mini` |
+| `GROQ_API_KEY` | Groq API key | empty |
+| `GROQ_MODEL` | Groq model | `llama-3.3-70b-versatile` |
+| `AI_TIMEOUT` | Request timeout in seconds | `120` |
+| `AI_HISTORY_LIMIT` | Number of messages kept in history | `20` |
+| `SETTINGS_FILE` | Path to the settings file | `settings.json` |
+| `MEMORY_FILE` | Path to the memory file | `memory.json` |
+| `HISTORY_FILE` | Path to the history file | `history.json` |
+
+## Project Structure
+
+```text
+milky/
+├── main.py                 # window, animations, tray, and app startup
+├── ai_client.py            # model requests, memory, and history
+├── settings_dialog.py      # endpoint settings window
+├── settings_store.py       # loading and saving settings.json
+├── autostart.py            # system autostart management
+├── web_search.py           # experimental search module
+├── install.sh              # Linux installer
+├── install.ps1             # Windows installer
+├── gifs/                   # Milky animations
+├── milka_idle.svg          # application icon
+├── .env.example            # environment variable template
+├── .gitattributes          # line ending and binary file rules
+├── requirements.txt        # core dependencies
+├── requirements-search.txt # experimental search dependencies
+└── LICENSE
+```
+
+## Limitations
+
+- Built-in web search is not connected to the interface yet. `web_search.py` remains an experimental module.
+- TTS and audio playback are not implemented.
+- Cloud providers require a working API key and internet access.
+- Response speed depends on the selected model and hardware. Local models on a weak CPU may answer slowly.
+
+## Pre-Commit Checks
+
+```bash
+python -m py_compile ai_client.py autostart.py main.py settings_dialog.py settings_store.py web_search.py
+bash -n install.sh
+```
+
+## License
+
+This project is distributed under the MIT License. See [LICENSE](LICENSE) for details.

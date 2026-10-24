@@ -1,0 +1,3 @@
+-r requirements.txt
+googlesearch-python==1.3.0
+ddgs==9.16.1
