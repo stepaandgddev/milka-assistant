@@ -1,16 +1,13 @@
 import json
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from runtime import data_path
 
-BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(data_path(".env"))
 
-SETTINGS_PATH = Path(os.environ.get("SETTINGS_FILE", "settings.json"))
-if not SETTINGS_PATH.is_absolute():
-    SETTINGS_PATH = BASE_DIR / SETTINGS_PATH
+SETTINGS_PATH = data_path(os.environ.get("SETTINGS_FILE", "settings.json"))
 
 PROVIDER_TYPES = [
     ("ollama", "Ollama"),

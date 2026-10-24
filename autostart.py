@@ -5,9 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from runtime import DATA_DIR, FROZEN, RESOURCE_DIR
+
 APP_NAME = "Milky"
 APP_ID = "milky"
-BASE_DIR = Path(__file__).resolve().parent
 
 
 def _config_home():
@@ -65,24 +66,26 @@ def _desktop_quote(value):
 
 def _command():
     executable = Path(sys.executable).resolve()
+    if FROZEN:
+        return [str(executable)]
     if sys.platform == "win32":
         pythonw = executable.with_name("pythonw.exe")
         if pythonw.exists():
             executable = pythonw
-    return [str(executable), str(BASE_DIR / "main.py")]
+    return [str(executable), str(DATA_DIR / "main.py")]
 
 
 def _desktop_entry():
-    python, main = _command()
+    command = " ".join(_desktop_quote(part) for part in _command())
     return "\n".join(
         [
             "[Desktop Entry]",
             "Type=Application",
             f"Name={APP_NAME}",
             "Comment=Animated AI pet",
-            f"Exec={_desktop_quote(python)} {_desktop_quote(main)}",
-            f"Path={BASE_DIR}",
-            f"Icon={BASE_DIR / 'milka_idle.svg'}",
+            f"Exec={command}",
+            f"Path={DATA_DIR}",
+            f"Icon={RESOURCE_DIR / 'milka_idle.svg'}",
             "Terminal=false",
             "X-GNOME-Autostart-enabled=true",
             "",
@@ -91,23 +94,22 @@ def _desktop_entry():
 
 
 def _windows_command_file():
-    python, main = _command()
+    command = " ".join(f'"{part}"' for part in _command())
     return "\n".join(
         [
             "@echo off",
-            f'cd /d "{BASE_DIR}"',
-            f'start "" "{python}" "{main}"',
+            f'cd /d "{DATA_DIR}"',
+            f'start "" {command}',
             "",
         ]
     )
 
 
 def _macos_plist():
-    python, main = _command()
     return {
         "Label": f"com.{APP_ID}.pet",
-        "ProgramArguments": [python, main],
-        "WorkingDirectory": str(BASE_DIR),
+        "ProgramArguments": _command(),
+        "WorkingDirectory": str(DATA_DIR),
         "RunAtLoad": True,
         "KeepAlive": False,
     }

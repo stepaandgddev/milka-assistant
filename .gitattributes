@@ -5,3 +5,4 @@
 *.svg text eol=lf
 *.gif binary
 *.ico binary
+*.yml text eol=lf

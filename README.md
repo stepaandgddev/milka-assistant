@@ -17,6 +17,7 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 - Opening links when the user explicitly asks.
 - System tray icon and context menu.
 - Linux and Windows installers with optional autostart.
+- GitHub Actions build for a standalone Windows executable.
 
 ## Requirements
 
@@ -80,6 +81,21 @@ After installation, autostart can be enabled or disabled in the settings window.
 ### macOS
 
 Use the manual installation below. Enabling autostart in the settings window creates a LaunchAgent.
+
+## Windows Build
+
+The repository includes a GitHub Actions workflow that builds a standalone Windows executable with PyInstaller.
+
+To build it:
+
+1. Open the **Actions** tab on GitHub.
+2. Select **Build Windows**.
+3. Click **Run workflow**.
+4. Download the `Milky-Windows` artifact after the job finishes.
+
+The workflow also runs on every push to `master` and publishes `Milky-Windows.zip` as a GitHub Release when a `v*` tag is pushed.
+
+The built app is portable: extract the archive to a writable folder and run `Milky.exe`. Place `.env` and the generated `settings.json`, `memory.json`, and `history.json` next to the executable. The executable is unsigned, so Windows SmartScreen may show a warning.
 
 ## Manual Installation
 
@@ -189,11 +205,14 @@ milky/
 ├── settings_dialog.py      # endpoint settings window
 ├── settings_store.py       # loading and saving settings.json
 ├── autostart.py            # system autostart management
+├── runtime.py              # source/frozen resource and data paths
 ├── web_search.py           # experimental search module
 ├── install.sh              # Linux installer
 ├── install.ps1             # Windows installer
+├── .github/workflows/      # GitHub Actions build workflow
 ├── gifs/                   # Milky animations
 ├── milka_idle.svg          # application icon
+├── milka_idle.ico          # Windows executable icon
 ├── .env.example            # environment variable template
 ├── .gitattributes          # line ending and binary file rules
 ├── requirements.txt        # core dependencies
@@ -211,7 +230,7 @@ milky/
 ## Pre-Commit Checks
 
 ```bash
-python -m py_compile ai_client.py autostart.py main.py settings_dialog.py settings_store.py web_search.py
+python -m py_compile ai_client.py autostart.py main.py runtime.py settings_dialog.py settings_store.py web_search.py
 bash -n install.sh
 ```
 

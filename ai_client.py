@@ -1,13 +1,14 @@
 import json
 import os
 import re
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+from runtime import data_path
+
+load_dotenv(data_path(".env"))
 
 OLLAMA_TIMEOUT = float(
     os.environ.get("AI_TIMEOUT", os.environ.get("OLLAMA_TIMEOUT", "120"))
@@ -46,12 +47,9 @@ OPENROUTER_SESSION_ID = os.environ.get(
     "OPENROUTER_SESSION_ID", "milky"
 ).strip()
 
-BASE_DIR = Path(__file__).resolve().parent
-
 
 def _data_path(variable, default):
-    path = Path(os.environ.get(variable, default))
-    return path if path.is_absolute() else BASE_DIR / path
+    return data_path(os.environ.get(variable, default))
 
 
 MEMORY_PATH = _data_path("MEMORY_FILE", "memory.json")

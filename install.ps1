@@ -130,6 +130,7 @@ $requiredFiles = @(
     'settings_dialog.py',
     'settings_store.py',
     'autostart.py',
+    'runtime.py',
     'requirements.txt',
     'milka_idle.svg'
 )
@@ -155,6 +156,7 @@ $files = @(
     'settings_dialog.py',
     'settings_store.py',
     'autostart.py',
+    'runtime.py',
     'web_search.py',
     'milka_idle.svg',
     'requirements.txt',

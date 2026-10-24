@@ -118,6 +118,7 @@ REQUIRED_FILES=(
     settings_dialog.py
     settings_store.py
     autostart.py
+    runtime.py
     requirements.txt
     milka_idle.svg
 )
@@ -179,7 +180,7 @@ mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$APPLICATIONS_DIR" "$ICON_DIR"
 if [ "$SOURCE_DIR" != "$INSTALL_DIR" ]; then
     for file in \
         main.py ai_client.py settings_dialog.py settings_store.py \
-        autostart.py web_search.py milka_idle.svg requirements.txt \
+        autostart.py runtime.py web_search.py milka_idle.svg requirements.txt \
         requirements-search.txt README.md LICENSE .env.example
     do
         if [ -f "$SOURCE_DIR/$file" ]; then

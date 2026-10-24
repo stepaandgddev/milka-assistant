@@ -49,16 +49,16 @@ from ai_client import (
     save_history,
     save_memory,
 )
+from runtime import resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
 
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
-BASE_DIR = Path(__file__).resolve().parent
 
 
 def asset_path(relative):
-    return str(BASE_DIR / relative)
+    return str(resource_path(relative))
 
 
 class ChatWorker(QThread):
