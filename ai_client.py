@@ -117,6 +117,13 @@ Links and search:
 - In text, briefly say what you are opening or searching for.
 - Do not claim that you have already read the search results.
 
+Drawing (SVG):
+- If the user asks you to draw, create an image, make a picture, or draw something, fill the svg field with valid SVG markup.
+- You can draw simple shapes, faces, animals, objects, scenes — anything expressible in SVG.
+- Keep the SVG compact, use a viewBox like "0 0 200 200", and use bright friendly colors.
+- You may reference milka_idle.svg style if helpful, but generate your own SVG code.
+- In text, briefly say what you drew.
+
 Rules:
 - Never write the emotion name inside text.
 - Do not output JSON, markdown, or service notes in text.
@@ -166,6 +173,14 @@ TOOLS = [
                             "explicitly asks to find something."
                         ),
                     },
+                    "svg": {
+                        "type": "string",
+                        "description": (
+                            "Optional. SVG image code to draw something for the user. "
+                            "Use this when the user asks you to draw, create an image, "
+                            "or make a picture. Return valid SVG markup as a string."
+                        ),
+                    },
                 },
                 "required": ["text", "emotion"],
             },
@@ -185,6 +200,7 @@ ANSWER_SCHEMA = {
             "items": {"type": "string"},
         },
         "search_query": {"type": "string"},
+        "svg": {"type": "string"},
     },
     "required": ["text", "emotion"],
 }
@@ -565,12 +581,18 @@ def parse_arguments(arguments):
     open_urls = normalize_urls(
         arguments.get("open_urls") or arguments.get("open_url")
     )
+    svg_code = arguments.get("svg")
+    if svg_code is not None:
+        svg_code = str(svg_code).strip()
+        if svg_code and not svg_code.startswith("<svg"):
+            svg_code = None
     return {
         "emotion": emotion,
         "text": reply,
         "memories": memories,
         "open_urls": open_urls,
         "search_query": normalize_search_query(arguments.get("search_query")),
+        "svg": svg_code,
     }
 
 

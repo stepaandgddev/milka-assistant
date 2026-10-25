@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
@@ -55,8 +56,10 @@ from runtime import resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
+import re
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
+SVG_DIR = Path("svg_drawings")
 
 
 def asset_path(relative):
@@ -160,6 +163,16 @@ class MainWindow(QMainWindow):
         self.movie.start()
         self._current_gif = "milka_idle.gif"
 
+        # SVG drawing widget (hidden by default)
+        self.svg_widget = QSvgWidget(self)
+        self.svg_widget.setFixedSize(GIF_SIZE, GIF_SIZE)
+        self.svg_widget.hide()
+        layout.addWidget(self.svg_widget)
+
+        # SVG drawings directory
+        SVG_DIR.mkdir(parents=True, exist_ok=True)
+        self._svg_counter = len(list(SVG_DIR.glob("*.svg")))
+
         self._is_dragging = False
         self._drag_position = QPoint()
         self._worker = None
@@ -173,6 +186,7 @@ class MainWindow(QMainWindow):
         self._tts_settings = self._settings.get("tts") or {}
         self._tts_worker = None
         self._selfie_window = None
+        self._svg_gallery = None
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -282,6 +296,11 @@ class MainWindow(QMainWindow):
 
         self.set_gif(EMOTIONS.get(emotion, EMOTIONS["speaking"]))
 
+        # Handle SVG drawing
+        svg_code = result.get("svg")
+        if svg_code:
+            self._show_svg(svg_code)
+
         if not text:
             self._bubble_timer.start(1500)
             return
@@ -368,6 +387,8 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self.open_settings)
         selfie_action = menu.addAction("Selfie")
         selfie_action.triggered.connect(self.show_selfie)
+        svg_action = menu.addAction("Show SVG gallery")
+        svg_action.triggered.connect(self.show_svg_gallery)
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
         quit_action.triggered.connect(self.quit_app)
@@ -414,6 +435,55 @@ class MainWindow(QMainWindow):
             self.show()
             self.raise_()
             self.activateWindow()
+
+    def _show_svg(self, svg_code):
+        """Display an SVG drawing in the main window."""
+        self.gif_label.hide()
+        self.svg_widget.show()
+        self.svg_widget.load(bytearray(svg_code, encoding="utf-8"))
+        # Save the drawing
+        self._svg_counter += 1
+        svg_file = SVG_DIR / f"milky_draw_{self._svg_counter}.svg"
+        try:
+            svg_file.write_text(svg_code, encoding="utf-8")
+        except OSError:
+            pass
+        # Auto-hide SVG after 8 seconds and return to gif
+        QTimer.singleShot(8000, self._hide_svg)
+
+    def _hide_svg(self):
+        self.svg_widget.hide()
+        self.gif_label.show()
+
+    def show_svg_gallery(self):
+        """Open a window showing all saved SVG drawings."""
+        if hasattr(self, "_svg_gallery") and self._svg_gallery is not None:
+            self._svg_gallery.close()
+        self._svg_gallery = QWidget(self, Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        self._svg_gallery.setWindowTitle("Milky's SVG Drawings")
+        self._svg_gallery.resize(400, 300)
+        layout = QVBoxLayout(self._svg_gallery)
+        svg_files = sorted(SVG_DIR.glob("*.svg"))
+        if not svg_files:
+            layout.addWidget(QLabel("No drawings yet. Ask Milky to draw something!"))
+        else:
+            for svg_file in svg_files:
+                btn = QPushButton(svg_file.name)
+                btn.clicked.connect(lambda checked, f=svg_file: self._load_svg_file(f))
+                layout.addWidget(btn)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self._svg_gallery.close)
+        layout.addWidget(close_btn)
+        self._svg_gallery.show()
+
+    def _load_svg_file(self, svg_file):
+        try:
+            svg_code = svg_file.read_text(encoding="utf-8")
+            self._show_svg(svg_code)
+        except OSError:
+            pass
+        if hasattr(self, "_svg_gallery") and self._svg_gallery is not None:
+            self._svg_gallery.close()
 
     def open_settings(self):
         dialog = SettingsDialog(self._settings, self)
@@ -463,6 +533,10 @@ class MainWindow(QMainWindow):
         if self._selfie_window is not None:
             self._selfie_window.close()
             self._selfie_window = None
+        # Close SVG gallery
+        if self._svg_gallery is not None:
+            self._svg_gallery.close()
+            self._svg_gallery = None
 
     def closeEvent(self, event):
         if self._tray is not None and self._tray.isVisible():
