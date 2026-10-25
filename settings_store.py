@@ -87,6 +87,15 @@ def default_screen_reading():
     }
 
 
+def default_vision():
+    return {
+        "enabled": _env_bool("VISION_ENABLED", False),
+        "model": os.environ.get("VISION_MODEL", "").strip(),
+        "api_key": os.environ.get("VISION_API_KEY", "").strip(),
+        "base_url": os.environ.get("VISION_BASE_URL", "").strip(),
+    }
+
+
 def normalize_tts(raw):
     defaults = default_tts()
     if not isinstance(raw, dict):
@@ -151,6 +160,18 @@ def normalize_screen_reading(raw):
     }
 
 
+def normalize_vision(raw):
+    defaults = default_vision()
+    if not isinstance(raw, dict):
+        return defaults
+    return {
+        "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "model": str(raw.get("model", defaults["model"])).strip(),
+        "api_key": str(raw.get("api_key", defaults["api_key"])).strip(),
+        "base_url": str(raw.get("base_url", defaults["base_url"])).strip(),
+    }
+
+
 def default_settings():
     providers = [
         {
@@ -187,6 +208,7 @@ def default_settings():
         "autostart": False,
         "tts": default_tts(),
         "screen_reading": default_screen_reading(),
+        "vision": default_vision(),
     }
 
 
@@ -242,6 +264,7 @@ def load_settings():
         "autostart": bool(data.get("autostart", False)),
         "tts": normalize_tts(data.get("tts")),
         "screen_reading": normalize_screen_reading(data.get("screen_reading")),
+        "vision": normalize_vision(data.get("vision")),
     }
 
 

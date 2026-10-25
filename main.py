@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QDesktopServices,
     QGuiApplication,
     QIcon,
+    QImage,
     QMovie,
     QMouseEvent,
     QShowEvent,
@@ -39,6 +40,8 @@ from PySide6.QtCore import (
     Signal,
     QTimer,
     QThread,
+    QBuffer,
+    QIODevice,
 )
 
 from ai_client import (
@@ -68,12 +71,15 @@ class ChatWorker(QThread):
     replied = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, text, history, memory, provider, parent=None):
+    def __init__(
+        self, text, history, memory, provider, image_base64=None, parent=None
+    ):
         super().__init__(parent)
         self._text = text
         self._history = history
         self._memory = memory
         self._provider = provider
+        self._image_base64 = image_base64
 
     def run(self):
         try:
@@ -83,6 +89,7 @@ class ChatWorker(QThread):
                     self._provider,
                     history=self._history,
                     memory=self._memory,
+                    image_base64=self._image_base64,
                 )
             )
         except Exception as error:
@@ -172,6 +179,8 @@ class MainWindow(QMainWindow):
             self._settings.get("screen_reading") or {}, self
         )
         self._screen_reader.capture_and_read(speak_callback=self._speak_screen_text)
+        self._vision_settings = self._settings.get("vision") or {}
+        self._vision_worker = None
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -195,6 +204,21 @@ class MainWindow(QMainWindow):
         x = screen_geometry.x() + screen_geometry.width() - self.width() - padding * 3
         y = screen_geometry.y() + screen_geometry.height() - self.height() - padding
         self.move(x, y)
+
+    def capture_screen(self):
+        """Capture the primary screen and return base64-encoded PNG bytes."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return None
+        pixmap = screen.grabWindow(0)
+        image = pixmap.toImage()
+        image = image.convertToFormat(QImage.Format.Format_RGB888)
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buf, "PNG")
+        data = bytes(buf.data())
+        buf.close()
+        return data
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -241,10 +265,17 @@ class MainWindow(QMainWindow):
         self._history.append({"role": "user", "content": text})
         self._history = self._history[-HISTORY_LIMIT:]
         save_history(self._history)
-        self.ask_ai(text, history, dict(self._memory))
 
-    def ask_ai(self, text, history, memory):
-        worker = ChatWorker(text, history, memory, dict(self._provider), self)
+        image_base64 = None
+        if self._vision_settings.get("enabled"):
+            image_base64 = self.capture_screen()
+
+        self.ask_ai(text, history, dict(self._memory), image_base64)
+
+    def ask_ai(self, text, history, memory, image_base64=None):
+        worker = ChatWorker(
+            text, history, memory, dict(self._provider), image_base64, self
+        )
         self._worker = worker
         worker.replied.connect(lambda result, w=worker: self.show_reply(w, result))
         worker.failed.connect(lambda error, w=worker: self.show_error(w, error))
@@ -402,6 +433,7 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
         self._tts_settings = self._settings.get("tts") or {}
+        self._vision_settings = self._settings.get("vision") or {}
         self._screen_reader.update_settings(
             self._settings.get("screen_reading") or {}
         )
