@@ -34,7 +34,7 @@ DEFAULT_GROQ_TTS_MODEL = os.environ.get(
     "GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english"
 ).strip()
 DEFAULT_GROQ_TTS_VOICE = os.environ.get(
-    "GROQ_TTS_VOICE", "troy"
+    "GROQ_TTS_VOICE", "hannah"
 ).strip()
 
 

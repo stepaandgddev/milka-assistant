@@ -131,7 +131,7 @@ def _synthesize_groq(text, tts_settings):
         ).strip(),
         "input": text,
         "voice": str(
-            tts_settings.get("groq_voice") or "troy"
+            tts_settings.get("groq_voice") or "hannah"
         ).strip(),
         "response_format": "wav",
     }
