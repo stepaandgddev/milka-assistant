@@ -71,15 +71,12 @@ class ChatWorker(QThread):
     replied = Signal(dict)
     failed = Signal(str)
 
-    def __init__(
-        self, text, history, memory, provider, image_base64=None, parent=None
-    ):
+    def __init__(self, text, history, memory, provider, parent=None):
         super().__init__(parent)
         self._text = text
         self._history = history
         self._memory = memory
         self._provider = provider
-        self._image_base64 = image_base64
 
     def run(self):
         try:
@@ -89,7 +86,6 @@ class ChatWorker(QThread):
                     self._provider,
                     history=self._history,
                     memory=self._memory,
-                    image_base64=self._image_base64,
                 )
             )
         except Exception as error:
