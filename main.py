@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
         self._tts_worker = None
         self._selfie_window = None
         self._svg_gallery = None
+        self._last_user_text = None
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
             return
         self.hide_input("milka_thinking.gif")
         self.message_submitted.emit(text)
+        self._last_user_text = text
         history = list(self._history)
         self._history.append({"role": "user", "content": text})
         self._history = self._history[-HISTORY_LIMIT:]
@@ -296,6 +298,8 @@ class MainWindow(QMainWindow):
         svg_code = result.get("svg")
         if svg_code:
             self._show_svg(svg_code)
+        elif self._user_asked_to_draw(self._last_user_text or ""):
+            self._generate_fallback_svg(self._last_user_text or "")
 
         if not text:
             self._bubble_timer.start(1500)
@@ -446,6 +450,34 @@ class MainWindow(QMainWindow):
             pass
         # Auto-hide SVG after 8 seconds and return to gif
         QTimer.singleShot(8000, self._hide_svg)
+
+    def _generate_fallback_svg(self, text):
+        """Generate a simple cat face SVG when model doesn't provide one."""
+        svg = """<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="100" cy="90" r="60" fill="#fff" stroke="#000" stroke-width="3"/>
+  <circle cx="75" cy="75" r="12" fill="#000"/>
+  <circle cx="125" cy="75" r="12" fill="#000"/>
+  <path d="M 85 110 Q 100 125 115 110" fill="none" stroke="#000" stroke-width="3"/>
+  <line x1="50" y1="60" x2="30" y2="50" stroke="#000" stroke-width="2"/>
+  <line x1="55" y1="70" x2="35" y2="65" stroke="#000" stroke-width="2"/>
+  <line x1="60" y1="80" x2="40" y2="80" stroke="#000" stroke-width="2"/>
+  <line x1="150" y1="60" x2="170" y2="50" stroke="#000" stroke-width="2"/>
+  <line x1="145" y1="70" x2="165" y2="65" stroke="#000" stroke-width="2"/>
+  <line x1="140" y1="80" x2="160" y2="80" stroke="#000" stroke-width="2"/>
+</svg>"""
+        self._show_svg(svg)
+
+    def _user_asked_to_draw(self, user_text):
+        """Check if the user is asking Milky to draw something."""
+        draw_keywords = [
+            "нарисуй", "нарисовать", "рисунок", "рисунок",
+            "draw", "drawing", "draw a", "paint", "sketch",
+            "создай картинку", "сделай картинку", "изобрази",
+            "котик", "кошка", "кот", "cat", "кит", "китенок",
+            "котёнок", "котенок",
+        ]
+        text_lower = user_text.lower()
+        return any(kw in text_lower for kw in draw_keywords)
 
     def _hide_svg(self):
         self.svg_widget.hide()
