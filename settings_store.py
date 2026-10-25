@@ -16,6 +16,102 @@ PROVIDER_TYPES = [
 
 TYPE_LABELS = dict(PROVIDER_TYPES)
 
+TTS_PROVIDERS = [
+    ("milka", "Milka TTS"),
+    ("groq", "Groq"),
+]
+
+TTS_PROVIDER_VALUES = {value for value, _ in TTS_PROVIDERS}
+
+DEFAULT_MILKA_TTS_URL = os.environ.get(
+    "MILKA_TTS_URL", "http://192.168.1.100:8765"
+).strip()
+DEFAULT_MILKA_TTS_VOICE = os.environ.get(
+    "MILKA_TTS_VOICE", "sveta"
+).strip()
+DEFAULT_MILKA_TTS_SPEED = os.environ.get("MILKA_TTS_SPEED", "1.0")
+DEFAULT_GROQ_TTS_MODEL = os.environ.get(
+    "GROQ_TTS_MODEL", "playai-tts"
+).strip()
+DEFAULT_GROQ_TTS_VOICE = os.environ.get(
+    "GROQ_TTS_VOICE", "Fritz-PlayAI"
+).strip()
+
+
+def _env_bool(variable, default):
+    value = os.environ.get(variable)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _float_value(value, default, minimum, maximum):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
+def default_tts():
+    provider = os.environ.get("TTS_PROVIDER", "milka").strip().lower()
+    if provider not in TTS_PROVIDER_VALUES:
+        provider = "milka"
+    return {
+        "enabled": _env_bool("TTS_ENABLED", True),
+        "provider": provider,
+        "milka_url": DEFAULT_MILKA_TTS_URL,
+        "milka_voice": DEFAULT_MILKA_TTS_VOICE or "sveta",
+        "milka_speed": _float_value(
+            DEFAULT_MILKA_TTS_SPEED, 1.0, 0.5, 2.0
+        ),
+        "groq_api_key": os.environ.get("GROQ_API_KEY", "").strip(),
+        "groq_model": DEFAULT_GROQ_TTS_MODEL or "playai-tts",
+        "groq_voice": DEFAULT_GROQ_TTS_VOICE or "Fritz-PlayAI",
+    }
+
+
+def normalize_tts(raw):
+    defaults = default_tts()
+    if not isinstance(raw, dict):
+        return defaults
+
+    provider = str(raw.get("provider", defaults["provider"])).strip().lower()
+    if provider not in TTS_PROVIDER_VALUES:
+        provider = defaults["provider"]
+
+    milka_url = str(
+        raw.get("milka_url", defaults["milka_url"])
+    ).strip().rstrip("/")
+    milka_voice = str(
+        raw.get("milka_voice", defaults["milka_voice"])
+    ).strip()
+    groq_api_key = str(
+        raw.get("groq_api_key", defaults["groq_api_key"])
+    ).strip()
+    groq_model = str(
+        raw.get("groq_model", defaults["groq_model"])
+    ).strip()
+    groq_voice = str(
+        raw.get("groq_voice", defaults["groq_voice"])
+    ).strip()
+
+    return {
+        "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "provider": provider,
+        "milka_url": milka_url,
+        "milka_voice": milka_voice or defaults["milka_voice"],
+        "milka_speed": _float_value(
+            raw.get("milka_speed", defaults["milka_speed"]),
+            defaults["milka_speed"],
+            0.5,
+            2.0,
+        ),
+        "groq_api_key": groq_api_key,
+        "groq_model": groq_model or defaults["groq_model"],
+        "groq_voice": groq_voice or defaults["groq_voice"],
+    }
+
 
 def default_settings():
     providers = [
@@ -51,6 +147,7 @@ def default_settings():
         "active": providers[0]["name"],
         "providers": providers,
         "autostart": False,
+        "tts": default_tts(),
     }
 
 
@@ -104,6 +201,7 @@ def load_settings():
         "active": active,
         "providers": providers,
         "autostart": bool(data.get("autostart", False)),
+        "tts": normalize_tts(data.get("tts")),
     }
 
 

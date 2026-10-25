@@ -1,11 +1,19 @@
 import copy
 
+from PySide6.QtCore import QUrl
+from PySide6.QtNetwork import (
+    QNetworkAccessManager,
+    QNetworkReply,
+    QNetworkRequest,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -21,7 +29,12 @@ from autostart import (
     autostart_supported,
     set_autostart,
 )
-from settings_store import PROVIDER_TYPES, save_settings
+from settings_store import (
+    PROVIDER_TYPES,
+    TTS_PROVIDERS,
+    default_tts,
+    save_settings,
+)
 
 
 class SettingsDialog(QDialog):
@@ -29,14 +42,18 @@ class SettingsDialog(QDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("AI Settings")
-        self.resize(680, 400)
+        self.resize(720, 650)
 
         self._settings = copy.deepcopy(settings)
         self._providers = self._settings["providers"]
+        self._tts = self._settings.get("tts") or default_tts()
         self._loading = False
+        self._network = QNetworkAccessManager(self)
+        self._health_reply = None
 
         self._build_ui()
         self._refresh_list(self._active_row())
+        self._load_tts()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -101,12 +118,68 @@ class SettingsDialog(QDialog):
         form.addRow(hint)
         content.addWidget(right, 3)
 
+        tts_group = QGroupBox("Text to speech")
+        tts_form = QFormLayout(tts_group)
+        self.tts_enabled_check = QCheckBox("Speak replies")
+        self.tts_provider_combo = QComboBox()
+        for value, label in TTS_PROVIDERS:
+            self.tts_provider_combo.addItem(label, value)
+        self.milka_url_edit = QLineEdit()
+        self.milka_url_edit.setPlaceholderText("http://<NUC-IP>:8765")
+        self.milka_voice_edit = QLineEdit()
+        self.milka_voice_edit.setPlaceholderText("sveta")
+        self.milka_speed_spin = QDoubleSpinBox()
+        self.milka_speed_spin.setRange(0.5, 2.0)
+        self.milka_speed_spin.setSingleStep(0.1)
+        self.milka_speed_spin.setDecimals(1)
+        self.groq_key_edit = QLineEdit()
+        self.groq_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.groq_model_edit = QLineEdit()
+        self.groq_model_edit.setPlaceholderText("playai-tts")
+        self.groq_voice_edit = QLineEdit()
+        self.groq_voice_edit.setPlaceholderText("Fritz-PlayAI")
+        self.tts_test_button = QPushButton("Test Milka TTS")
+        self.tts_status = QLabel("")
+        self.tts_status.setWordWrap(True)
+        self.tts_status.setStyleSheet("color: #777;")
+
+        tts_hint = QLabel(
+            "Milka TTS runs on your NUC. Enter its local address, for example "
+            "http://192.168.1.100:8765. The test button calls /health. "
+            "Groq uses the OpenAI-compatible speech endpoint."
+        )
+        tts_hint.setWordWrap(True)
+        tts_hint.setStyleSheet("color: #777;")
+
+        tts_form.addRow(self.tts_enabled_check)
+        tts_form.addRow("Provider", self.tts_provider_combo)
+        tts_form.addRow("Milka TTS URL", self.milka_url_edit)
+        tts_form.addRow("Milka voice", self.milka_voice_edit)
+        tts_form.addRow("Milka speed", self.milka_speed_spin)
+        tts_form.addRow("Groq API key", self.groq_key_edit)
+        tts_form.addRow("Groq model", self.groq_model_edit)
+        tts_form.addRow("Groq voice", self.groq_voice_edit)
+        tts_form.addRow("", self.tts_test_button)
+        tts_form.addRow(self.tts_status)
+        tts_form.addRow(tts_hint)
+        root.addWidget(tts_group)
+
         self.name_edit.textChanged.connect(self._store_current)
         self.type_combo.currentIndexChanged.connect(self._store_current)
         self.url_edit.textChanged.connect(self._store_current)
         self.model_edit.textChanged.connect(self._store_current)
         self.key_edit.textChanged.connect(self._store_current)
         self.active_check.toggled.connect(self._set_active)
+
+        self.tts_enabled_check.toggled.connect(self._tts_changed)
+        self.tts_provider_combo.currentIndexChanged.connect(self._tts_changed)
+        self.milka_url_edit.textChanged.connect(self._tts_changed)
+        self.milka_voice_edit.textChanged.connect(self._tts_changed)
+        self.milka_speed_spin.valueChanged.connect(self._tts_changed)
+        self.groq_key_edit.textChanged.connect(self._tts_changed)
+        self.groq_model_edit.textChanged.connect(self._tts_changed)
+        self.groq_voice_edit.textChanged.connect(self._tts_changed)
+        self.tts_test_button.clicked.connect(self._test_milka_tts)
 
         box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -149,6 +222,113 @@ class SettingsDialog(QDialog):
             self._settings.get("active") == provider["name"]
         )
         self._loading = False
+
+    def _load_tts(self):
+        self._loading = True
+        self.tts_enabled_check.setChecked(bool(self._tts.get("enabled", True)))
+        index = self.tts_provider_combo.findData(
+            self._tts.get("provider", "milka")
+        )
+        self.tts_provider_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.milka_url_edit.setText(self._tts.get("milka_url", ""))
+        self.milka_voice_edit.setText(self._tts.get("milka_voice", "sveta"))
+        self.milka_speed_spin.setValue(
+            float(self._tts.get("milka_speed", 1.0))
+        )
+        self.groq_key_edit.setText(self._tts.get("groq_api_key", ""))
+        self.groq_model_edit.setText(
+            self._tts.get("groq_model", "playai-tts")
+        )
+        self.groq_voice_edit.setText(
+            self._tts.get("groq_voice", "Fritz-PlayAI")
+        )
+        self._loading = False
+        self._update_tts_state()
+
+    def _tts_changed(self):
+        self._store_tts()
+        self._update_tts_state()
+
+    def _store_tts(self):
+        if self._loading:
+            return
+        self._tts = {
+            "enabled": self.tts_enabled_check.isChecked(),
+            "provider": self.tts_provider_combo.currentData() or "milka",
+            "milka_url": self.milka_url_edit.text().strip().rstrip("/"),
+            "milka_voice": self.milka_voice_edit.text().strip() or "sveta",
+            "milka_speed": round(self.milka_speed_spin.value(), 1),
+            "groq_api_key": self.groq_key_edit.text().strip(),
+            "groq_model": self.groq_model_edit.text().strip()
+            or "playai-tts",
+            "groq_voice": self.groq_voice_edit.text().strip()
+            or "Fritz-PlayAI",
+        }
+        self._settings["tts"] = dict(self._tts)
+
+    def _update_tts_state(self):
+        enabled = self.tts_enabled_check.isChecked()
+        provider = self.tts_provider_combo.currentData() or "milka"
+        self.tts_provider_combo.setEnabled(enabled)
+        for widget in (
+            self.milka_url_edit,
+            self.milka_voice_edit,
+            self.milka_speed_spin,
+        ):
+            widget.setEnabled(enabled and provider == "milka")
+        for widget in (
+            self.groq_key_edit,
+            self.groq_model_edit,
+            self.groq_voice_edit,
+        ):
+            widget.setEnabled(enabled and provider == "groq")
+        self.tts_test_button.setEnabled(enabled and provider == "milka")
+
+    def _test_milka_tts(self):
+        self._store_tts()
+        base = self._tts.get("milka_url", "").strip().rstrip("/")
+        if not base:
+            self.tts_status.setText("Enter the Milka TTS URL first.")
+            return
+        if not base.lower().startswith(("http://", "https://")):
+            self.tts_status.setText(
+                "The Milka TTS URL must start with http:// or https://."
+            )
+            return
+        if self._health_reply is not None:
+            self._health_reply.abort()
+            self._health_reply.deleteLater()
+            self._health_reply = None
+        self.tts_status.setText("Checking Milka TTS...")
+        self.tts_test_button.setEnabled(False)
+        request = QNetworkRequest(QUrl(base + "/health"))
+        request.setTransferTimeout(5000)
+        reply = self._network.get(request)
+        self._health_reply = reply
+        reply.finished.connect(lambda r=reply: self._on_health_reply(r))
+
+    def _on_health_reply(self, reply):
+        if reply is not self._health_reply:
+            reply.deleteLater()
+            return
+        self._health_reply = None
+        status = reply.attribute(
+            QNetworkRequest.Attribute.HttpStatusCodeAttribute
+        )
+        body = bytes(reply.readAll()).decode("utf-8", "replace").strip()
+        if reply.error() != QNetworkReply.NetworkError.NoError or status != 200:
+            detail = " ".join(body.split()) or reply.errorString()
+            if len(detail) > 180:
+                detail = detail[:177] + "..."
+            self.tts_status.setText(f"Error: {detail}")
+        else:
+            detail = " ".join(body.split())
+            if len(detail) > 120:
+                detail = detail[:117] + "..."
+            suffix = f": {detail}" if detail else ""
+            self.tts_status.setText(f"Milka TTS is reachable ({status}){suffix}.")
+        reply.deleteLater()
+        self._update_tts_state()
 
     def _store_current(self):
         if self._loading:
@@ -216,6 +396,7 @@ class SettingsDialog(QDialog):
 
     def accept(self):
         self._store_current()
+        self._store_tts()
         names = [provider["name"] for provider in self._providers]
         if any(not name for name in names):
             QMessageBox.warning(self, "Settings", "Every endpoint must have a name.")
@@ -233,6 +414,34 @@ class SettingsDialog(QDialog):
                 return
         if self._settings.get("active") not in names:
             self._settings["active"] = names[0]
+        tts = self._settings.get("tts") or {}
+        if tts.get("enabled"):
+            if tts.get("provider") == "milka":
+                url = tts.get("milka_url", "")
+                if not url:
+                    QMessageBox.warning(
+                        self,
+                        "Text to speech",
+                        "Enter the Milka TTS URL, for example "
+                        "http://192.168.1.100:8765.",
+                    )
+                    return
+                if not url.lower().startswith(("http://", "https://")):
+                    QMessageBox.warning(
+                        self,
+                        "Text to speech",
+                        "The Milka TTS URL must start with http:// or https://.",
+                    )
+                    return
+            elif tts.get("provider") == "groq" and not tts.get(
+                "groq_api_key"
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Text to speech",
+                    "Enter the Groq API key or set GROQ_API_KEY in .env.",
+                )
+                return
         autostart = self.autostart_check.isChecked()
         try:
             set_autostart(autostart)
