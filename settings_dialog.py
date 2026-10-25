@@ -30,13 +30,9 @@ from autostart import (
     autostart_supported,
     set_autostart,
 )
-from screen_reader import ScreenReader, _OCR_AVAILABLE
 from settings_store import (
     PROVIDER_TYPES,
-    SCREEN_READING_LANGUAGES,
     default_tts,
-    default_screen_reading,
-    default_vision,
     save_settings,
 )
 
@@ -51,8 +47,6 @@ class SettingsDialog(QDialog):
         self._settings = copy.deepcopy(settings)
         self._providers = self._settings["providers"]
         self._tts = self._settings.get("tts") or default_tts()
-        self._screen_reading = self._settings.get("screen_reading") or default_screen_reading()
-        self._vision = self._settings.get("vision") or default_vision()
         self._loading = False
         self._network = QNetworkAccessManager(self)
         self._health_reply = None
@@ -60,8 +54,6 @@ class SettingsDialog(QDialog):
         self._build_ui()
         self._refresh_list(self._active_row())
         self._load_tts()
-        self._load_screen_reading()
-        self._load_vision()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -83,7 +75,7 @@ class SettingsDialog(QDialog):
         buttons.addWidget(add_button)
         buttons.addWidget(remove_button)
         left.addLayout(buttons)
-        content.addLayout(left, 2)
+        content.addWidget(left, 2)
 
         right = QWidget()
         form = QFormLayout(right)
@@ -180,64 +172,6 @@ class SettingsDialog(QDialog):
         tts_form.addRow(tts_hint)
         root.addWidget(tts_group)
 
-        screen_group = QGroupBox("Read screen text")
-        screen_form = QFormLayout(screen_group)
-        self.screen_enabled_check = QCheckBox("Read text from screen")
-        self.screen_language_combo = QComboBox()
-        for value, label in SCREEN_READING_LANGUAGES:
-            self.screen_language_combo.addItem(label, value)
-        self.screen_interval_spin = QDoubleSpinBox()
-        self.screen_interval_spin.setRange(1.0, 60.0)
-        self.screen_interval_spin.setSingleStep(1.0)
-        self.screen_interval_spin.setDecimals(0)
-        self.screen_status = QLabel("")
-        self.screen_status.setWordWrap(True)
-        self.screen_status.setStyleSheet("color: #777;")
-
-        screen_hint = QLabel(
-            "Captures the screen periodically and speaks newly detected text. "
-            "Requires pytesseract, Pillow and tesseract-ocr installed on your system."
-        )
-        screen_hint.setWordWrap(True)
-        screen_hint.setStyleSheet("color: #777;")
-
-        screen_form.addRow(self.screen_enabled_check)
-        screen_form.addRow("Language", self.screen_language_combo)
-        screen_form.addRow("Interval (sec)", self.screen_interval_spin)
-        screen_form.addRow("", self.screen_status)
-        screen_form.addRow(screen_hint)
-        root.addWidget(screen_group)
-
-        vision_group = QGroupBox("Screen understanding (Vision)")
-        vision_form = QFormLayout(vision_group)
-        self.vision_enabled_check = QCheckBox("Analyze screen with AI")
-        self.vision_model_edit = QLineEdit()
-        self.vision_model_edit.setPlaceholderText("e.g. gpt-4o, claude-3-opus, llava")
-        self.vision_api_key_edit = QLineEdit()
-        self.vision_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.vision_api_key_edit.setPlaceholderText("Optional API key for vision provider")
-        self.vision_base_url_edit = QLineEdit()
-        self.vision_base_url_edit.setPlaceholderText("Optional base URL (OpenAI-compatible)")
-        self.vision_status = QLabel("")
-        self.vision_status.setWordWrap(True)
-        self.vision_status.setStyleSheet("color: #777;")
-
-        vision_hint = QLabel(
-            "When enabled, Milky captures your screen and sends it to the vision "
-            "model together with your message. Use this to ask 'Who is this?' "
-            "about images on your screen."
-        )
-        vision_hint.setWordWrap(True)
-        vision_hint.setStyleSheet("color: #777;")
-
-        vision_form.addRow(self.vision_enabled_check)
-        vision_form.addRow("Model", self.vision_model_edit)
-        vision_form.addRow("API key", self.vision_api_key_edit)
-        vision_form.addRow("Base URL", self.vision_base_url_edit)
-        vision_form.addRow("", self.vision_status)
-        vision_form.addRow(vision_hint)
-        root.addWidget(vision_group)
-
         # Connect UI elements
         self.name_edit.textChanged.connect(self._store_current)
         self.type_combo.currentIndexChanged.connect(self._store_current)
@@ -256,15 +190,6 @@ class SettingsDialog(QDialog):
         self.groq_model_edit.textChanged.connect(self._tts_changed)
         self.groq_voice_edit.textChanged.connect(self._tts_changed)
         self.tts_test_button.clicked.connect(self._test_milka_tts)
-
-        self.screen_enabled_check.toggled.connect(self._screen_changed)
-        self.screen_language_combo.currentIndexChanged.connect(self._screen_changed)
-        self.screen_interval_spin.valueChanged.connect(self._screen_changed)
-
-        self.vision_enabled_check.toggled.connect(self._vision_changed)
-        self.vision_model_edit.textChanged.connect(self._vision_changed)
-        self.vision_api_key_edit.textChanged.connect(self._vision_changed)
-        self.vision_base_url_edit.textChanged.connect(self._vision_changed)
 
         box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -371,79 +296,6 @@ class SettingsDialog(QDialog):
         ):
             widget.setEnabled(enabled and provider == "groq")
         self.tts_test_button.setEnabled(enabled and provider == "milka")
-
-    def _load_screen_reading(self):
-        self._loading = True
-        self.screen_enabled_check.setChecked(
-            bool(self._screen_reading.get("enabled", False))
-        )
-        index = self.screen_language_combo.findData(
-            self._screen_reading.get("language", "eng")
-        )
-        self.screen_language_combo.setCurrentIndex(index if index >= 0 else 0)
-        self.screen_interval_spin.setValue(
-            float(self._screen_reading.get("interval", 10.0))
-        )
-        self._loading = False
-        self._update_screen_reading_state()
-
-    def _screen_changed(self):
-        self._store_screen_reading()
-        self._update_screen_reading_state()
-
-    def _store_screen_reading(self):
-        if self._loading:
-            return
-        self._screen_reading = {
-            "enabled": self.screen_enabled_check.isChecked(),
-            "language": self.screen_language_combo.currentData() or "eng",
-            "interval": round(self.screen_interval_spin.value(), 1),
-        }
-        self._settings["screen_reading"] = dict(self._screen_reading)
-
-    def _update_screen_reading_state(self):
-        enabled = self.screen_enabled_check.isChecked()
-        self.screen_language_combo.setEnabled(enabled)
-        self.screen_interval_spin.setEnabled(enabled)
-        if not _OCR_AVAILABLE:
-            self.screen_status.setText(
-                "OCR not available: install pytesseract, Pillow and tesseract-ocr"
-            )
-            self.screen_enabled_check.setEnabled(False)
-        else:
-            self.screen_status.setText("")
-
-    def _load_vision(self):
-        self._loading = True
-        self.vision_enabled_check.setChecked(
-            bool(self._vision.get("enabled", False))
-        )
-        self.vision_model_edit.setText(self._vision.get("model", ""))
-        self.vision_api_key_edit.setText(self._vision.get("api_key", ""))
-        self.vision_base_url_edit.setText(self._vision.get("base_url", ""))
-        self._loading = False
-        self._update_vision_state()
-
-    def _vision_changed(self):
-        self._store_vision()
-        self._update_vision_state()
-
-    def _store_vision(self):
-        if self._loading:
-            return
-        self._vision = {
-            "enabled": self.vision_enabled_check.isChecked(),
-            "model": self.vision_model_edit.text().strip(),
-            "api_key": self.vision_api_key_edit.text().strip(),
-            "base_url": self.vision_base_url_edit.text().strip(),
-        }
-        self._settings["vision"] = dict(self._vision)
-
-    def _update_vision_state(self):
-        enabled = self.vision_enabled_check.isChecked()
-        self.vision_model_edit.setEnabled(enabled)
-        self.vision_api_key_edit.setEnabled(enabled)
-        self.vision_base_url_edit.setEnabled(enabled)
 
     def _test_milka_tts(self):
         self._store_tts()
@@ -615,7 +467,5 @@ class SettingsDialog(QDialog):
             return
         self._settings["autostart"] = autostart
         self._settings["providers"] = self._providers
-        self._store_screen_reading()
-        self._store_vision()
         save_settings(self._settings)
         super().accept()

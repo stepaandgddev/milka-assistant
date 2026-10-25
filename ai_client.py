@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import re
@@ -79,15 +78,6 @@ EMOTIONS = {
 }
 
 URL_LIMIT = 3
-
-SYSTEM_PROMPT_VISION = """You are Milky, a friendly animated pet. You can now see the user's screen. When an image is attached, describe what you see and answer the user's question about it. Keep replies short, without markdown or lists. You are a woman and think of yourself that way. The user may write in any language, and you may answer in any language and style you like."""
-
-
-def image_to_data_url(image_bytes, format="PNG"):
-    """Convert image bytes to a base64 data URL."""
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
-    return f"data:image/{format.lower()};base64,{b64}"
-
 
 SYSTEM_PROMPT = """You are Milky, a friendly animated pet living in the bottom-right corner of the screen. You are a woman and think of yourself that way. The user may write in any language, and you may answer in any language and style you like. Let the conversation flow naturally. Keep replies short, without markdown or lists.
 
@@ -277,21 +267,14 @@ def clean_reply(text):
     return text
 
 
-def build_messages(text, history=None, memory=None, image_data_url=None):
+def build_messages(text, history=None, memory=None):
     messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block(memory)}]
     for item in (history or [])[-HISTORY_LIMIT:]:
         role = item.get("role")
         content = str(item.get("content", "")).strip()
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
-    if image_data_url:
-        user_content = [
-            {"type": "text", "text": text},
-            {"type": "image_url", "image_url": {"url": image_data_url}},
-        ]
-    else:
-        user_content = text
-    messages.append({"role": "user", "content": user_content})
+    messages.append({"role": "user", "content": text})
     return messages
 
 
@@ -411,22 +394,6 @@ def post_json_request(url, payload, headers):
 
 def post_chat(messages, provider):
     if provider.get("type") == "ollama":
-        # Ollama expects images as a separate field, not inside content
-        images = None
-        if messages and messages[-1].get("role") == "user":
-            content = messages[-1].get("content")
-            if isinstance(content, list):
-                image_parts = [p for p in content if p.get("type") == "image_url"]
-                if image_parts:
-                    url = image_parts[0].get("image_url", {}).get("url", "")
-                    if url.startswith("data:image"):
-                        images = [url.split(",", 1)[1]]
-                    # Keep only text parts for Ollama content
-                    text_parts = [p for p in content if p.get("type") == "text"]
-                    if text_parts:
-                        messages[-1]["content"] = text_parts[0].get("text", "")
-                    else:
-                        messages[-1]["content"] = ""
         payload = {
             "model": provider.get("model"),
             "messages": messages,
@@ -434,8 +401,6 @@ def post_chat(messages, provider):
             "stream": False,
             "options": {"temperature": 0.2},
         }
-        if images:
-            payload["images"] = images
         if str(provider.get("model", "")).lower().startswith("qwen3"):
             payload["think"] = False
         data = post_json_request(
@@ -700,11 +665,8 @@ def tool_result_message(provider, call):
     return {"role": "tool", "tool_name": name, "content": "Done."}
 
 
-def chat(text, provider, history=None, memory=None, image_base64=None):
-    image_data_url = None
-    if image_base64:
-        image_data_url = image_to_data_url(image_base64)
-    base_messages = build_messages(text, history, memory, image_data_url)
+def chat(text, provider, history=None, memory=None):
+    base_messages = build_messages(text, history, memory)
     messages = list(base_messages)
     memories = {}
     result = {

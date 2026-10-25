@@ -40,8 +40,6 @@ from PySide6.QtCore import (
     Signal,
     QTimer,
     QThread,
-    QBuffer,
-    QIODevice,
 )
 
 from ai_client import (
@@ -56,8 +54,6 @@ from runtime import resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
-from screen_reader import ScreenReader
-
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
 
@@ -175,12 +171,6 @@ class MainWindow(QMainWindow):
         self._tts_player = AudioPlayer(self)
         self._tts_settings = self._settings.get("tts") or {}
         self._tts_worker = None
-        self._screen_reader = ScreenReader(
-            self._settings.get("screen_reading") or {}, self
-        )
-        self._screen_reader.capture_and_read(speak_callback=self._speak_screen_text)
-        self._vision_settings = self._settings.get("vision") or {}
-        self._vision_worker = None
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -204,21 +194,6 @@ class MainWindow(QMainWindow):
         x = screen_geometry.x() + screen_geometry.width() - self.width() - padding * 3
         y = screen_geometry.y() + screen_geometry.height() - self.height() - padding
         self.move(x, y)
-
-    def capture_screen(self):
-        """Capture the primary screen and return base64-encoded PNG bytes."""
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return None
-        pixmap = screen.grabWindow(0)
-        image = pixmap.toImage()
-        image = image.convertToFormat(QImage.Format.Format_RGB888)
-        buf = QBuffer()
-        buf.open(QIODevice.OpenModeFlag.WriteOnly)
-        image.save(buf, "PNG")
-        data = bytes(buf.data())
-        buf.close()
-        return data
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -265,17 +240,10 @@ class MainWindow(QMainWindow):
         self._history.append({"role": "user", "content": text})
         self._history = self._history[-HISTORY_LIMIT:]
         save_history(self._history)
+        self.ask_ai(text, history, dict(self._memory))
 
-        image_base64 = None
-        if self._vision_settings.get("enabled"):
-            image_base64 = self.capture_screen()
-
-        self.ask_ai(text, history, dict(self._memory), image_base64)
-
-    def ask_ai(self, text, history, memory, image_base64=None):
-        worker = ChatWorker(
-            text, history, memory, dict(self._provider), image_base64, self
-        )
+    def ask_ai(self, text, history, memory):
+        worker = ChatWorker(text, history, memory, dict(self._provider), self)
         self._worker = worker
         worker.replied.connect(lambda result, w=worker: self.show_reply(w, result))
         worker.failed.connect(lambda error, w=worker: self.show_error(w, error))
@@ -327,20 +295,6 @@ class MainWindow(QMainWindow):
 
     def _speak_reply(self, text):
         if not self._tts_settings.get("enabled"):
-            return
-        provider = self._tts_settings.get("provider", "milka")
-        if provider == "groq" and not self._tts_settings.get("groq_api_key"):
-            return
-        self._tts_worker = TtsSynthesisWorker(text, self._tts_settings, self)
-        self._tts_worker.ready.connect(lambda path: self._play_tts_audio(path))
-        self._tts_worker.failed.connect(lambda err: print(f"TTS error: {err}"))
-        self._tts_worker.start()
-
-    def _speak_screen_text(self, text):
-        if not self._screen_reader.is_available():
-            return
-        settings = self._settings.get("screen_reading") or {}
-        if not settings.get("enabled"):
             return
         provider = self._tts_settings.get("provider", "milka")
         if provider == "groq" and not self._tts_settings.get("groq_api_key"):
@@ -433,10 +387,6 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
         self._tts_settings = self._settings.get("tts") or {}
-        self._vision_settings = self._settings.get("vision") or {}
-        self._screen_reader.update_settings(
-            self._settings.get("screen_reading") or {}
-        )
         if self._tray is not None:
             self._tray.setToolTip(self.tray_tooltip())
         self.show_status(f"Active endpoint: {self._provider.get('name', 'AI')}")
@@ -474,9 +424,6 @@ class MainWindow(QMainWindow):
         # Stop TTS player
         if self._tts_player is not None:
             self._tts_player.stop()
-        # Stop screen reader
-        if self._screen_reader is not None:
-            self._screen_reader.stop()
 
     def closeEvent(self, event):
         if self._tray is not None and self._tray.isVisible():
