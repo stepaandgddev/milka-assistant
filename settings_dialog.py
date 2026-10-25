@@ -30,10 +30,12 @@ from autostart import (
     autostart_supported,
     set_autostart,
 )
+from screen_reader import ScreenReader, _OCR_AVAILABLE
 from settings_store import (
     PROVIDER_TYPES,
-    TTS_PROVIDERS,
+    SCREEN_READING_LANGUAGES,
     default_tts,
+    default_screen_reading,
     save_settings,
 )
 
@@ -48,6 +50,7 @@ class SettingsDialog(QDialog):
         self._settings = copy.deepcopy(settings)
         self._providers = self._settings["providers"]
         self._tts = self._settings.get("tts") or default_tts()
+        self._screen_reading = self._settings.get("screen_reading") or default_screen_reading()
         self._loading = False
         self._network = QNetworkAccessManager(self)
         self._health_reply = None
@@ -55,6 +58,7 @@ class SettingsDialog(QDialog):
         self._build_ui()
         self._refresh_list(self._active_row())
         self._load_tts()
+        self._load_screen_reading()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -173,6 +177,34 @@ class SettingsDialog(QDialog):
         tts_form.addRow(tts_hint)
         root.addWidget(tts_group)
 
+        screen_group = QGroupBox("Read screen text")
+        screen_form = QFormLayout(screen_group)
+        self.screen_enabled_check = QCheckBox("Read text from screen")
+        self.screen_language_combo = QComboBox()
+        for value, label in SCREEN_READING_LANGUAGES:
+            self.screen_language_combo.addItem(label, value)
+        self.screen_interval_spin = QDoubleSpinBox()
+        self.screen_interval_spin.setRange(1.0, 60.0)
+        self.screen_interval_spin.setSingleStep(1.0)
+        self.screen_interval_spin.setDecimals(0)
+        self.screen_status = QLabel("")
+        self.screen_status.setWordWrap(True)
+        self.screen_status.setStyleSheet("color: #777;")
+
+        screen_hint = QLabel(
+            "Captures the screen periodically and speaks newly detected text. "
+            "Requires pytesseract, Pillow and tesseract-ocr installed on your system."
+        )
+        screen_hint.setWordWrap(True)
+        screen_hint.setStyleSheet("color: #777;")
+
+        screen_form.addRow(self.screen_enabled_check)
+        screen_form.addRow("Language", self.screen_language_combo)
+        screen_form.addRow("Interval (sec)", self.screen_interval_spin)
+        screen_form.addRow("", self.screen_status)
+        screen_form.addRow(screen_hint)
+        root.addWidget(screen_group)
+
         # Connect UI elements
         self.name_edit.textChanged.connect(self._store_current)
         self.type_combo.currentIndexChanged.connect(self._store_current)
@@ -191,6 +223,10 @@ class SettingsDialog(QDialog):
         self.groq_model_edit.textChanged.connect(self._tts_changed)
         self.groq_voice_edit.textChanged.connect(self._tts_changed)
         self.tts_test_button.clicked.connect(self._test_milka_tts)
+
+        self.screen_enabled_check.toggled.connect(self._screen_changed)
+        self.screen_language_combo.currentIndexChanged.connect(self._screen_changed)
+        self.screen_interval_spin.valueChanged.connect(self._screen_changed)
 
         box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -273,30 +309,52 @@ class SettingsDialog(QDialog):
             "milka_speed": round(self.milka_speed_spin.value(), 1),
             "groq_api_key": self.groq_key_edit.text().strip(),
             "groq_model": self.groq_model_edit.text().strip()
-            or "playai-tts",
+            or "canopylabs/orpheus-v1-english",
             "groq_voice": self.groq_voice_edit.text().strip()
-            or "Fritz-PlayAI",
+            or "hannah",
         }
         self._settings["tts"] = dict(self._tts)
 
-    def _update_tts_state(self):
-        enabled = self.tts_enabled_check.isChecked()
-        provider = "milka" if self.milka_radio.isChecked() else "groq"
-        self.milka_radio.setEnabled(enabled)
-        self.groq_radio.setEnabled(enabled)
-        for widget in (
-            self.milka_url_edit,
-            self.milka_voice_edit,
-            self.milka_speed_spin,
-        ):
-            widget.setEnabled(enabled and provider == "milka")
-        for widget in (
-            self.groq_key_edit,
-            self.groq_model_edit,
-            self.groq_voice_edit,
-        ):
-            widget.setEnabled(enabled and provider == "groq")
-        self.tts_test_button.setEnabled(enabled and provider == "milka")
+    def _load_screen_reading(self):
+        self._loading = True
+        self.screen_enabled_check.setChecked(
+            bool(self._screen_reading.get("enabled", False))
+        )
+        index = self.screen_language_combo.findData(
+            self._screen_reading.get("language", "eng")
+        )
+        self.screen_language_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.screen_interval_spin.setValue(
+            float(self._screen_reading.get("interval", 10.0))
+        )
+        self._loading = False
+        self._update_screen_reading_state()
+
+    def _screen_changed(self):
+        self._store_screen_reading()
+        self._update_screen_reading_state()
+
+    def _store_screen_reading(self):
+        if self._loading:
+            return
+        self._screen_reading = {
+            "enabled": self.screen_enabled_check.isChecked(),
+            "language": self.screen_language_combo.currentData() or "eng",
+            "interval": round(self.screen_interval_spin.value(), 1),
+        }
+        self._settings["screen_reading"] = dict(self._screen_reading)
+
+    def _update_screen_reading_state(self):
+        enabled = self.screen_enabled_check.isChecked()
+        self.screen_language_combo.setEnabled(enabled)
+        self.screen_interval_spin.setEnabled(enabled)
+        if not _OCR_AVAILABLE:
+            self.screen_status.setText(
+                "OCR not available: install pytesseract, Pillow and tesseract-ocr"
+            )
+            self.screen_enabled_check.setEnabled(False)
+        else:
+            self.screen_status.setText("")
 
     def _test_milka_tts(self):
         self._store_tts()
@@ -468,5 +526,6 @@ class SettingsDialog(QDialog):
             return
         self._settings["autostart"] = autostart
         self._settings["providers"] = self._providers
+        self._store_screen_reading()
         save_settings(self._settings)
         super().accept()

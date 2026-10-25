@@ -53,6 +53,7 @@ from runtime import resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
+from screen_reader import ScreenReader
 
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
@@ -167,6 +168,10 @@ class MainWindow(QMainWindow):
         self._tts_player = AudioPlayer(self)
         self._tts_settings = self._settings.get("tts") or {}
         self._tts_worker = None
+        self._screen_reader = ScreenReader(
+            self._settings.get("screen_reading") or {}, self
+        )
+        self._screen_reader.capture_and_read(speak_callback=self._speak_screen_text)
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -300,6 +305,20 @@ class MainWindow(QMainWindow):
         self._tts_worker.failed.connect(lambda err: print(f"TTS error: {err}"))
         self._tts_worker.start()
 
+    def _speak_screen_text(self, text):
+        if not self._screen_reader.is_available():
+            return
+        settings = self._settings.get("screen_reading") or {}
+        if not settings.get("enabled"):
+            return
+        provider = self._tts_settings.get("provider", "milka")
+        if provider == "groq" and not self._tts_settings.get("groq_api_key"):
+            return
+        self._tts_worker = TtsSynthesisWorker(text, self._tts_settings, self)
+        self._tts_worker.ready.connect(lambda path: self._play_tts_audio(path))
+        self._tts_worker.failed.connect(lambda err: print(f"TTS error: {err}"))
+        self._tts_worker.start()
+
     def _play_tts_audio(self, path):
         self._tts_player.play(Path(path))
 
@@ -383,6 +402,9 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
         self._tts_settings = self._settings.get("tts") or {}
+        self._screen_reader.update_settings(
+            self._settings.get("screen_reading") or {}
+        )
         if self._tray is not None:
             self._tray.setToolTip(self.tray_tooltip())
         self.show_status(f"Active endpoint: {self._provider.get('name', 'AI')}")
@@ -420,6 +442,9 @@ class MainWindow(QMainWindow):
         # Stop TTS player
         if self._tts_player is not None:
             self._tts_player.stop()
+        # Stop screen reader
+        if self._screen_reader is not None:
+            self._screen_reader.stop()
 
     def closeEvent(self, event):
         if self._tray is not None and self._tray.isVisible():

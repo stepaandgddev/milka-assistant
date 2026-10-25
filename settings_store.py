@@ -53,6 +53,12 @@ def _float_value(value, default, minimum, maximum):
     return max(minimum, min(maximum, number))
 
 
+SCREEN_READING_LANGUAGES = [
+    ("eng", "English"),
+    ("rus", "Russian"),
+]
+
+
 def default_tts():
     provider = os.environ.get("TTS_PROVIDER", "milka").strip().lower()
     if provider not in TTS_PROVIDER_VALUES:
@@ -66,8 +72,18 @@ def default_tts():
             DEFAULT_MILKA_TTS_SPEED, 1.0, 0.5, 2.0
         ),
         "groq_api_key": os.environ.get("GROQ_API_KEY", "").strip(),
-        "groq_model": DEFAULT_GROQ_TTS_MODEL or "playai-tts",
-        "groq_voice": DEFAULT_GROQ_TTS_VOICE or "Fritz-PlayAI",
+        "groq_model": DEFAULT_GROQ_TTS_MODEL or "canopylabs/orpheus-v1-english",
+        "groq_voice": DEFAULT_GROQ_TTS_VOICE or "hannah",
+    }
+
+
+def default_screen_reading():
+    return {
+        "enabled": _env_bool("SCREEN_READING_ENABLED", False),
+        "language": os.environ.get("SCREEN_READING_LANGUAGE", "eng").strip(),
+        "interval": _float_value(
+            os.environ.get("SCREEN_READING_INTERVAL", "10"), 10.0, 1.0, 60.0
+        ),
     }
 
 
@@ -113,6 +129,28 @@ def normalize_tts(raw):
     }
 
 
+def normalize_screen_reading(raw):
+    defaults = default_screen_reading()
+    if not isinstance(raw, dict):
+        return defaults
+
+    language = str(raw.get("language", defaults["language"])).strip()
+    lang_values = {v for v, _ in SCREEN_READING_LANGUAGES}
+    if language not in lang_values:
+        language = defaults["language"]
+
+    return {
+        "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "language": language,
+        "interval": _float_value(
+            raw.get("interval", defaults["interval"]),
+            defaults["interval"],
+            1.0,
+            60.0,
+        ),
+    }
+
+
 def default_settings():
     providers = [
         {
@@ -148,6 +186,7 @@ def default_settings():
         "providers": providers,
         "autostart": False,
         "tts": default_tts(),
+        "screen_reading": default_screen_reading(),
     }
 
 
@@ -202,6 +241,7 @@ def load_settings():
         "providers": providers,
         "autostart": bool(data.get("autostart", False)),
         "tts": normalize_tts(data.get("tts")),
+        "screen_reading": normalize_screen_reading(data.get("screen_reading")),
     }
 
 
