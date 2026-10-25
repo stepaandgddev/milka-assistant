@@ -315,6 +315,25 @@ class SettingsDialog(QDialog):
         }
         self._settings["tts"] = dict(self._tts)
 
+    def _update_tts_state(self):
+        enabled = self.tts_enabled_check.isChecked()
+        provider = "milka" if self.milka_radio.isChecked() else "groq"
+        self.milka_radio.setEnabled(enabled)
+        self.groq_radio.setEnabled(enabled)
+        for widget in (
+            self.milka_url_edit,
+            self.milka_voice_edit,
+            self.milka_speed_spin,
+        ):
+            widget.setEnabled(enabled and provider == "milka")
+        for widget in (
+            self.groq_key_edit,
+            self.groq_model_edit,
+            self.groq_voice_edit,
+        ):
+            widget.setEnabled(enabled and provider == "groq")
+        self.tts_test_button.setEnabled(enabled and provider == "milka")
+
     def _load_screen_reading(self):
         self._loading = True
         self.screen_enabled_check.setChecked(
