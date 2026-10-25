@@ -34,7 +34,7 @@ DEFAULT_GROQ_TTS_MODEL = os.environ.get(
     "GROQ_TTS_MODEL", "playai-tts"
 ).strip()
 DEFAULT_GROQ_TTS_VOICE = os.environ.get(
-    "GROQ_TTS_VOICE", "Fritz-PlayAI"
+    "GROQ_TTS_VOICE", "autumn"
 ).strip()
 
 
