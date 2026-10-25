@@ -75,7 +75,7 @@ class SettingsDialog(QDialog):
         buttons.addWidget(add_button)
         buttons.addWidget(remove_button)
         left.addLayout(buttons)
-        content.addWidget(left, 2)
+        content.addLayout(left, 2)
 
         right = QWidget()
         form = QFormLayout(right)
