@@ -127,14 +127,13 @@ def _synthesize_groq(text, tts_settings):
         raise TtsError("Set the Groq API key in Settings.")
     payload = {
         "model": str(
-            tts_settings.get("groq_model") or "playai-tts"
+            tts_settings.get("groq_model") or "canopylabs/orpheus-v1-english"
         ).strip(),
         "input": text,
         "voice": str(
-            tts_settings.get("groq_voice") or "Fritz-PlayAI"
+            tts_settings.get("groq_voice") or "troy"
         ).strip(),
         "response_format": "wav",
-        "speed": 1.0,
     }
     try:
         response = requests.post(

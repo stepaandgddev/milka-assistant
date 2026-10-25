@@ -31,10 +31,10 @@ DEFAULT_MILKA_TTS_VOICE = os.environ.get(
 ).strip()
 DEFAULT_MILKA_TTS_SPEED = os.environ.get("MILKA_TTS_SPEED", "1.0")
 DEFAULT_GROQ_TTS_MODEL = os.environ.get(
-    "GROQ_TTS_MODEL", "playai-tts"
+    "GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english"
 ).strip()
 DEFAULT_GROQ_TTS_VOICE = os.environ.get(
-    "GROQ_TTS_VOICE", "autumn"
+    "GROQ_TTS_VOICE", "troy"
 ).strip()
 
 
