@@ -41,6 +41,7 @@ from PySide6.QtCore import (
     QTimer,
     QThread,
 )
+from PySide6.QtSvgWidgets import QSvgWidget
 
 from ai_client import (
     EMOTIONS,
@@ -171,6 +172,7 @@ class MainWindow(QMainWindow):
         self._tts_player = AudioPlayer(self)
         self._tts_settings = self._settings.get("tts") or {}
         self._tts_worker = None
+        self._selfie_window = None
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -323,6 +325,37 @@ class MainWindow(QMainWindow):
         self.set_widget_visible(self.bubble, False)
         self.set_gif("milka_idle.gif")
 
+    def show_selfie(self):
+        """Show Milky's selfie (milka_idle.svg) in a small overlay window."""
+        if self._selfie_window is not None and self._selfie_window.isVisible():
+            self._selfie_window.hide()
+            self._selfie_window = None
+            return
+
+        self._selfie_window = QWidget(self, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self._selfie_window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._selfie_window.resize(300, 300)
+
+        layout = QVBoxLayout(self._selfie_window)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        svg = QSvgWidget(asset_path("milka_idle.svg"))
+        svg.setFixedSize(300, 300)
+        layout.addWidget(svg)
+
+        # Position near the main window
+        main_pos = self.frameGeometry().topLeft()
+        self._selfie_window.move(main_pos.x() - 320, main_pos.y())
+
+        self._selfie_window.show()
+        # Auto-hide after 5 seconds
+        QTimer.singleShot(5000, self._hide_selfie)
+
+    def _hide_selfie(self):
+        if self._selfie_window is not None:
+            self._selfie_window.hide()
+            self._selfie_window = None
+
     def setup_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
@@ -333,6 +366,8 @@ class MainWindow(QMainWindow):
         toggle_action.triggered.connect(self.toggle_window)
         settings_action = menu.addAction("Settings...")
         settings_action.triggered.connect(self.open_settings)
+        selfie_action = menu.addAction("Selfie")
+        selfie_action.triggered.connect(self.show_selfie)
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
         quit_action.triggered.connect(self.quit_app)
@@ -424,6 +459,10 @@ class MainWindow(QMainWindow):
         # Stop TTS player
         if self._tts_player is not None:
             self._tts_player.stop()
+        # Close selfie window
+        if self._selfie_window is not None:
+            self._selfie_window.close()
+            self._selfie_window = None
 
     def closeEvent(self, event):
         if self._tray is not None and self._tray.isVisible():
