@@ -209,14 +209,16 @@ JSON_REMINDER = (
     "Return only a JSON object with no explanations or markdown. Fields: text "
     "(reply), emotion (one of the emotions), open_urls (array of links if the "
     "user explicitly asks to open something), search_query (Google query if "
-    "they ask to find something), and remember_key/remember_value when needed."
+    "they ask to find something), remember_key/remember_value when needed, and "
+    "svg (valid SVG markup if the user asked you to draw something)."
 )
 
 RETRY_PROMPT = (
     "You did not call respond. You must call the respond tool with text and "
     "emotion. If the user shared a fact about themselves, fill remember_key "
     "and remember_value. If the user asked to open a link, fill open_urls. If "
-    "they asked to find something, fill search_query."
+    "they asked to find something, fill search_query. If they asked you to "
+    "draw something, fill svg with valid SVG markup."
 )
 
 
