@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMessageBox,
+    QRadioButton,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -121,9 +122,17 @@ class SettingsDialog(QDialog):
         tts_group = QGroupBox("Text to speech")
         tts_form = QFormLayout(tts_group)
         self.tts_enabled_check = QCheckBox("Speak replies")
-        self.tts_provider_combo = QComboBox()
-        for value, label in TTS_PROVIDERS:
-            self.tts_provider_combo.addItem(label, value)
+
+        # Radio buttons for provider selection
+        self.milka_radio = QRadioButton("Milky TTS")
+        self.groq_radio = QRadioButton("Groq")
+        provider_layout = QHBoxLayout()
+        provider_layout.addWidget(self.milka_radio)
+        provider_layout.addWidget(self.groq_radio)
+        provider_layout.addStretch()
+        provider_widget = QWidget()
+        provider_widget.setLayout(provider_layout)
+
         self.milka_url_edit = QLineEdit()
         self.milka_url_edit.setPlaceholderText("http://<NUC-IP>:8765")
         self.milka_voice_edit = QLineEdit()
@@ -152,7 +161,7 @@ class SettingsDialog(QDialog):
         tts_hint.setStyleSheet("color: #777;")
 
         tts_form.addRow(self.tts_enabled_check)
-        tts_form.addRow("Provider", self.tts_provider_combo)
+        tts_form.addRow("Provider", provider_widget)
         tts_form.addRow("Milka TTS URL", self.milka_url_edit)
         tts_form.addRow("Milka voice", self.milka_voice_edit)
         tts_form.addRow("Milka speed", self.milka_speed_spin)
@@ -164,6 +173,7 @@ class SettingsDialog(QDialog):
         tts_form.addRow(tts_hint)
         root.addWidget(tts_group)
 
+        # Connect UI elements
         self.name_edit.textChanged.connect(self._store_current)
         self.type_combo.currentIndexChanged.connect(self._store_current)
         self.url_edit.textChanged.connect(self._store_current)
@@ -172,7 +182,8 @@ class SettingsDialog(QDialog):
         self.active_check.toggled.connect(self._set_active)
 
         self.tts_enabled_check.toggled.connect(self._tts_changed)
-        self.tts_provider_combo.currentIndexChanged.connect(self._tts_changed)
+        self.milka_radio.toggled.connect(self._tts_changed)
+        self.groq_radio.toggled.connect(self._tts_changed)
         self.milka_url_edit.textChanged.connect(self._tts_changed)
         self.milka_voice_edit.textChanged.connect(self._tts_changed)
         self.milka_speed_spin.valueChanged.connect(self._tts_changed)
@@ -226,10 +237,11 @@ class SettingsDialog(QDialog):
     def _load_tts(self):
         self._loading = True
         self.tts_enabled_check.setChecked(bool(self._tts.get("enabled", True)))
-        index = self.tts_provider_combo.findData(
-            self._tts.get("provider", "milka")
-        )
-        self.tts_provider_combo.setCurrentIndex(index if index >= 0 else 0)
+        provider = self._tts.get("provider", "milka")
+        if provider == "milka":
+            self.milka_radio.setChecked(True)
+        else:
+            self.groq_radio.setChecked(True)
         self.milka_url_edit.setText(self._tts.get("milka_url", ""))
         self.milka_voice_edit.setText(self._tts.get("milka_voice", "sveta"))
         self.milka_speed_spin.setValue(
@@ -252,9 +264,10 @@ class SettingsDialog(QDialog):
     def _store_tts(self):
         if self._loading:
             return
+        provider = "milka" if self.milka_radio.isChecked() else "groq"
         self._tts = {
             "enabled": self.tts_enabled_check.isChecked(),
-            "provider": self.tts_provider_combo.currentData() or "milka",
+            "provider": provider,
             "milka_url": self.milka_url_edit.text().strip().rstrip("/"),
             "milka_voice": self.milka_voice_edit.text().strip() or "sveta",
             "milka_speed": round(self.milka_speed_spin.value(), 1),
@@ -268,8 +281,9 @@ class SettingsDialog(QDialog):
 
     def _update_tts_state(self):
         enabled = self.tts_enabled_check.isChecked()
-        provider = self.tts_provider_combo.currentData() or "milka"
-        self.tts_provider_combo.setEnabled(enabled)
+        provider = "milka" if self.milka_radio.isChecked() else "groq"
+        self.milka_radio.setEnabled(enabled)
+        self.groq_radio.setEnabled(enabled)
         for widget in (
             self.milka_url_edit,
             self.milka_voice_edit,
