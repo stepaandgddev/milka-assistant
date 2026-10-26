@@ -131,6 +131,8 @@ $requiredFiles = @(
     'settings_store.py',
     'autostart.py',
     'runtime.py',
+    'tts.py',
+    'svg_art.py',
     'requirements.txt',
     'milka_idle.svg'
 )
@@ -157,6 +159,8 @@ $files = @(
     'settings_store.py',
     'autostart.py',
     'runtime.py',
+    'tts.py',
+    'svg_art.py',
     'web_search.py',
     'milka_idle.svg',
     'requirements.txt',

@@ -1,10 +1,3 @@
 PySide6==6.12.0
 requests==2.34.2
 python-dotenv==1.2.4
-
-# Optional: screen reading (OCR)
-# pytesseract==0.3.10
-# Pillow==10.4.0
-# Also install tesseract-ocr binary on your system:
-#   Linux: sudo pacman -S tesseract   (or apt install tesseract-ocr)
-#   Windows: install from https://github.com/UB-Mannheim/tesseract/wiki

@@ -15,6 +15,9 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 - Provider and model switching in the settings window.
 - Request caching for OpenRouter.
 - Opening links when the user explicitly asks.
+- Detailed SVG drawings: when asked to draw something, Milky shows a polished SVG illustration in her window and saves it to `svg_drawings/`.
+- SVG selfie and drawing gallery from the tray menu.
+- Text-to-speech replies through a Milka TTS server or Groq, with configurable endpoint and voice.
 - System tray icon and context menu.
 - Linux and Windows installers with optional autostart.
 - GitHub Actions build for a standalone Windows executable.
@@ -165,8 +168,10 @@ python main.py
 - Drag — move the pet.
 - Enter — send a message.
 - Esc — close the input field.
-- Right click — open the context menu.
+- Right click — open the context menu (Settings, Selfie, Show SVG gallery, Quit).
 - Double-click the tray icon — show or hide the window.
+
+Ask Milky to **draw a cat**, **draw a sun**, **нарисуй котика** or **нарисуй цветок** and she will show a detailed SVG drawing. Drawings stay on screen for 12 seconds and are saved in `svg_drawings/`; open the tray menu → **Show SVG gallery** to browse them.
 
 ## Autostart
 
@@ -195,6 +200,13 @@ When installing with `install.sh` or `install.ps1`, autostart can be enabled imm
 | `SETTINGS_FILE` | Path to the settings file | `settings.json` |
 | `MEMORY_FILE` | Path to the memory file | `memory.json` |
 | `HISTORY_FILE` | Path to the history file | `history.json` |
+| `TTS_ENABLED` | Enable spoken replies | `true` |
+| `TTS_PROVIDER` | TTS backend (`milka` or `groq`) | `milka` |
+| `MILKY_TTS_URL` | Milka TTS server address | `http://192.168.1.100:8765` |
+| `MILKY_TTS_VOICE` | Milka TTS voice | `sveta` |
+| `MILKY_TTS_SPEED` | Milka TTS speed | `1.0` |
+| `GROQ_TTS_MODEL` | Groq TTS model | `canopylabs/orpheus-v1-english` |
+| `GROQ_TTS_VOICE` | Groq TTS voice | `hannah` |
 
 ## Project Structure
 
@@ -206,6 +218,8 @@ milky/
 ├── settings_store.py       # loading and saving settings.json
 ├── autostart.py            # system autostart management
 ├── runtime.py              # source/frozen resource and data paths
+├── tts.py                  # Milka/Groq speech synthesis and playback
+├── svg_art.py              # detailed fallback SVG illustrations
 ├── web_search.py           # experimental search module
 ├── install.sh              # Linux installer
 ├── install.ps1             # Windows installer
@@ -223,14 +237,15 @@ milky/
 ## Limitations
 
 - Built-in web search is not connected to the interface yet. `web_search.py` remains an experimental module.
-- TTS and audio playback are not implemented.
+- Drawing quality depends on the selected model. If the model does not return SVG, Milky falls back to her own detailed illustrations.
+- TTS needs a running Milka TTS server or a valid Groq API key.
 - Cloud providers require a working API key and internet access.
 - Response speed depends on the selected model and hardware. Local models on a weak CPU may answer slowly.
 
 ## Pre-Commit Checks
 
 ```bash
-python -m py_compile ai_client.py autostart.py main.py runtime.py settings_dialog.py settings_store.py web_search.py
+python -m py_compile ai_client.py autostart.py main.py runtime.py settings_dialog.py settings_store.py svg_art.py tts.py web_search.py
 bash -n install.sh
 ```
 
