@@ -837,7 +837,7 @@ SPACE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
 </svg>"""
 
 # Official self-portrait line art from the user's milka_idle.svg.
-SELFIE_PATHS = """  <g stroke="white" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+SELFIE_PATHS = """  <g fill="none" stroke="white" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
     <path d="M284 273C284 218 251 189 207 189C159 189 128 227 128 281C128 333 158 370 200 370C248 370 284 330 284 273Z"/>
     <path d="M132 212L97 179"/>
     <path d="M118 246L75 227"/>
@@ -878,7 +878,7 @@ SELFIE = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
 </svg>"""
 
 SELFIE_SPACE = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
-     viewBox="0 0 640 640">
+     viewBox="0 0 640 640" fill="none">
   <defs>
     <linearGradient id="ssSky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#070b20"/>

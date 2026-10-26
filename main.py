@@ -59,6 +59,7 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from ai_client import (
     EMOTIONS,
     chat,
+    fix_selfie_fill,
     load_history,
     load_memory,
     save_history,
@@ -76,6 +77,22 @@ SVG_DIR = data_path("svg_drawings")
 
 def asset_path(relative):
     return str(resource_path(relative))
+
+
+def repair_saved_selfies():
+    """Fix older drawings where copied self-portrait paths got a black fill."""
+    for svg_file in SVG_DIR.glob("*.svg"):
+        try:
+            code = svg_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fixed = fix_selfie_fill(code)
+        if fixed == code:
+            continue
+        try:
+            svg_file.write_text(fixed, encoding="utf-8")
+        except OSError:
+            pass
 
 
 class ChatWorker(QThread):
@@ -173,6 +190,7 @@ class MainWindow(QMainWindow):
 
         # SVG drawings directory
         SVG_DIR.mkdir(parents=True, exist_ok=True)
+        repair_saved_selfies()
         self._svg_counter = len(list(SVG_DIR.glob("*.svg")))
 
         self._is_dragging = False

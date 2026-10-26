@@ -579,6 +579,33 @@ def normalize_search_query(value):
     return query[:200] or None
 
 
+def fix_selfie_fill(code):
+    """Keep copied self-portrait line art unfilled.
+
+    Models sometimes copy the official face paths into a scene and forget the
+    ``fill="none"`` attribute. SVG then fills the closed eye loops and the
+    smile with black.
+    """
+    signature = "M284 273C284 218 251 189"
+    if signature not in code:
+        return code
+    pattern = re.compile(r"<g\b([^>]*)>(.*?)</g>", re.DOTALL)
+
+    def repl(match):
+        attrs, inner = match.groups()
+        if signature in inner and not re.search(r"\bfill\s*=", attrs):
+            return f'<g fill="none"{attrs}>{inner}</g>'
+        return match.group(0)
+
+    code = pattern.sub(repl, code)
+    code = re.sub(
+        r'<path\b(?![^>]*\bfill\s*=)([^>]*\bd="M284 273C284 218 251 189[^"]*"[^>]*)>',
+        r'<path fill="none"\1>',
+        code,
+    )
+    return code
+
+
 def normalize_svg(value):
     """Return clean SVG markup even if the model wrapped it in code fences."""
     if value is None:
@@ -598,6 +625,8 @@ def normalize_svg(value):
     end = code.rfind("</svg>")
     if end != -1:
         code = code[: end + len("</svg>")]
+    if code:
+        code = fix_selfie_fill(code)
     return code or None
 
 
