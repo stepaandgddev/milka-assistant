@@ -151,10 +151,9 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
-memory.json
-history.json
-settings.json
 .venv
 env/
 venv/
@@ -222,5 +221,12 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# User-generated SVG drawings
+# Local user data and generated content
+avatar.png
+memory.json
+history.json
+settings.json
 svg_drawings/
+.DS_Store
+Thumbs.db
+desktop.ini
