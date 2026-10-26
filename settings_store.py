@@ -23,6 +23,15 @@ TTS_PROVIDERS = [
 
 TTS_PROVIDER_VALUES = {value for value, _ in TTS_PROVIDERS}
 
+DRAWING_PROVIDERS = [
+    ("model", "AI model (SVG)"),
+    ("cloudflare", "Cloudflare Workers AI (raster)"),
+]
+
+DRAWING_PROVIDER_VALUES = {value for value, _ in DRAWING_PROVIDERS}
+
+DEFAULT_CLOUDFLARE_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
+
 DEFAULT_MILKA_TTS_URL = os.environ.get(
     "MILKA_TTS_URL", "http://192.168.1.100:8765"
 ).strip()
@@ -53,6 +62,14 @@ def _float_value(value, default, minimum, maximum):
     return max(minimum, min(maximum, number))
 
 
+def _int_value(value, default, minimum, maximum):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
 def default_tts():
     provider = os.environ.get("TTS_PROVIDER", "milka").strip().lower()
     if provider not in TTS_PROVIDER_VALUES:
@@ -69,6 +86,69 @@ def default_tts():
         "groq_model": DEFAULT_GROQ_TTS_MODEL or "canopylabs/orpheus-v1-english",
         "groq_voice": DEFAULT_GROQ_TTS_VOICE or "hannah",
     }
+
+
+def default_drawing():
+    provider = os.environ.get("DRAWING_PROVIDER", "").strip().lower()
+    account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    api_token = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+    if api_token.lower().startswith("bearer "):
+        api_token = api_token[7:].strip()
+
+    # If credentials are supplied through .env, make Cloudflare the natural
+    # default without overriding an explicit DRAWING_PROVIDER=model choice.
+    if provider not in DRAWING_PROVIDER_VALUES:
+        provider = "cloudflare" if account_id and api_token else "model"
+
+    model = os.environ.get(
+        "CLOUDFLARE_IMAGE_MODEL", DEFAULT_CLOUDFLARE_IMAGE_MODEL
+    ).strip()
+    return {
+        "provider": provider,
+        "cloudflare_account_id": account_id,
+        "cloudflare_api_token": api_token,
+        "cloudflare_model": model or DEFAULT_CLOUDFLARE_IMAGE_MODEL,
+        "cloudflare_steps": _int_value(
+            os.environ.get("CLOUDFLARE_IMAGE_STEPS", "4"), 4, 1, 8
+        ),
+    }
+
+
+def normalize_drawing(raw):
+    defaults = default_drawing()
+    if not isinstance(raw, dict):
+        return defaults
+
+    provider = str(raw.get("provider", defaults["provider"])).strip().lower()
+    if provider not in DRAWING_PROVIDER_VALUES:
+        provider = defaults["provider"]
+
+    account_id = str(
+        raw.get("cloudflare_account_id", defaults["cloudflare_account_id"])
+    ).strip()
+    api_token = str(
+        raw.get("cloudflare_api_token", defaults["cloudflare_api_token"])
+    ).strip()
+    if api_token.lower().startswith("bearer "):
+        api_token = api_token[7:].strip()
+    model = str(
+        raw.get("cloudflare_model", defaults["cloudflare_model"])
+    ).strip()
+
+    return {
+        "provider": provider,
+        "cloudflare_account_id": account_id,
+        "cloudflare_api_token": api_token,
+        "cloudflare_model": model or DEFAULT_CLOUDFLARE_IMAGE_MODEL,
+        "cloudflare_steps": _int_value(
+            raw.get("cloudflare_steps", defaults["cloudflare_steps"]),
+            defaults["cloudflare_steps"],
+            1,
+            8,
+        ),
+    }
+
+
 def normalize_tts(raw):
     defaults = default_tts()
     if not isinstance(raw, dict):
@@ -146,6 +226,7 @@ def default_settings():
         "providers": providers,
         "autostart": False,
         "tts": default_tts(),
+        "drawing": default_drawing(),
     }
 
 
@@ -200,6 +281,7 @@ def load_settings():
         "providers": providers,
         "autostart": bool(data.get("autostart", False)),
         "tts": normalize_tts(data.get("tts")),
+        "drawing": normalize_drawing(data.get("drawing")),
     }
 
 

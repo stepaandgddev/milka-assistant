@@ -33,6 +33,7 @@ from PySide6.QtGui import (
     QGuiApplication,
     QIcon,
     QImage,
+    QImageReader,
     QMovie,
     QMouseEvent,
     QPainter,
@@ -67,7 +68,11 @@ from ai_client import (
     save_history,
     save_memory,
 )
-from clothing_art import fallback_clothing, wants_clothing
+from clothing_art import (
+    fallback_clothing,
+    wants_clothing,
+    wants_wear_overlay,
+)
 from clothing_overlay import AvatarLabel, clothing_fits, validate_clothing_svg
 from outfit_store import infer_slot, load_outfit, save_outfit, wear_item
 from runtime import data_path, resource_path
@@ -85,10 +90,33 @@ from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
 SVG_DIR = data_path("svg_drawings")
+DRAWING_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 def asset_path(relative):
     return str(resource_path(relative))
+
+
+def drawing_files():
+    """Return every gallery drawing, in both SVG and raster formats."""
+    if not SVG_DIR.exists():
+        return []
+    try:
+        files = [
+            path
+            for path in SVG_DIR.iterdir()
+            if path.is_file() and path.suffix.lower() in DRAWING_EXTENSIONS
+        ]
+    except OSError:
+        return []
+    return files
+
+
+def drawing_mtime(path):
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0
 
 
 def repair_saved_selfies():
@@ -112,12 +140,15 @@ class ChatWorker(QThread):
     replied = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, text, history, memory, provider, parent=None):
+    def __init__(
+        self, text, history, memory, provider, parent=None, image_settings=None
+    ):
         super().__init__(parent)
         self._text = text
         self._history = history
         self._memory = memory
         self._provider = provider
+        self._image_settings = image_settings or {}
 
     def run(self):
         try:
@@ -127,6 +158,7 @@ class ChatWorker(QThread):
                     self._provider,
                     history=self._history,
                     memory=self._memory,
+                    image_settings=self._image_settings,
                 )
             )
         except Exception as error:
@@ -205,7 +237,7 @@ class MainWindow(QMainWindow):
         # SVG drawings directory
         SVG_DIR.mkdir(parents=True, exist_ok=True)
         repair_saved_selfies()
-        self._svg_counter = len(list(SVG_DIR.glob("*.svg")))
+        self._drawing_counter = len(drawing_files())
 
         self._is_dragging = False
         self._drag_position = QPoint()
@@ -214,6 +246,7 @@ class MainWindow(QMainWindow):
         self._memory = load_memory()
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
+        self._drawing_settings = self._settings.get("drawing") or {}
         self._positioned = False
         self._tray = None
         self._tts_player = AudioPlayer(self)
@@ -307,7 +340,14 @@ class MainWindow(QMainWindow):
         self.ask_ai(text, history, dict(self._memory))
 
     def ask_ai(self, text, history, memory):
-        worker = ChatWorker(text, history, memory, dict(self._provider), self)
+        worker = ChatWorker(
+            text,
+            history,
+            memory,
+            dict(self._provider),
+            self,
+            image_settings=dict(self._drawing_settings),
+        )
         self._worker = worker
         worker.replied.connect(lambda result, w=worker: self.show_reply(w, result))
         worker.failed.connect(lambda error, w=worker: self.show_error(w, error))
@@ -346,33 +386,41 @@ class MainWindow(QMainWindow):
         self._reply_gif = EMOTIONS.get(emotion, EMOTIONS["speaking"])
         self.set_gif(self._reply_gif)
 
-        # Wear generated clothing over the face, then save any drawing to the
-        # gallery instead of replacing Milky's face.
+        # Validate generated clothing (face-safe layering), then save any
+        # drawing to the gallery instead of replacing Milky's face.
         request = self._last_user_text or ""
         wear_applied = self._apply_wear(result.get("wear"), request)
-        svg_code = result.get("svg")
-        if svg_code and not self._svg_is_valid(svg_code):
-            svg_code = None
-        if (
-            svg_code
-            and not wants_selfie(request)
-            and not includes_milky(request)
-            and subject_for(request) not in (None, "selfie")
-            and SELFIE_SIGNATURE in svg_code
-        ):
-            svg_code = None
-        if wants_selfie(request) and is_plain_selfie(request):
-            svg_code = draw_for(request)
-        elif not svg_code and asked_to_draw(request):
-            svg_code = draw_for(request)
-        if (wear_applied or wants_clothing(request)) and not asked_to_draw(
-            request
-        ):
-            # Clothing overlays are not gallery drawings.
-            svg_code = None
-        if svg_code and self._save_drawing(svg_code):
+        saved_image = None
+        image = result.get("image")
+        if isinstance(image, dict):
+            saved_image = self._save_raster_drawing(image)
+        if saved_image is not None:
             self._play_drawing_animation()
             self._show_drawing_toast()
+        else:
+            svg_code = result.get("svg")
+            if svg_code and not self._svg_is_valid(svg_code):
+                svg_code = None
+            if (
+                svg_code
+                and not wants_selfie(request)
+                and not includes_milky(request)
+                and subject_for(request) not in (None, "selfie")
+                and SELFIE_SIGNATURE in svg_code
+            ):
+                svg_code = None
+            if wants_selfie(request) and is_plain_selfie(request):
+                svg_code = draw_for(request)
+            elif not svg_code and asked_to_draw(request):
+                svg_code = draw_for(request)
+            if (wear_applied or wants_clothing(request)) and not asked_to_draw(
+                request
+            ):
+                # Clothing overlays are not gallery drawings.
+                svg_code = None
+            if svg_code and self._save_drawing(svg_code):
+                self._play_drawing_animation()
+                self._show_drawing_toast()
 
         if not text:
             self._bubble_timer.start(1500)
@@ -431,7 +479,7 @@ class MainWindow(QMainWindow):
         toggle_action.triggered.connect(self.toggle_window)
         settings_action = menu.addAction("Settings...")
         settings_action.triggered.connect(self.open_settings)
-        svg_action = menu.addAction("Show SVG gallery")
+        svg_action = menu.addAction("Show drawing gallery")
         svg_action.triggered.connect(self.show_svg_gallery)
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
@@ -491,6 +539,11 @@ class MainWindow(QMainWindow):
 
     def _apply_wear(self, wear, request):
         """Validate, persist, and display one generated clothing item."""
+        # A drawing request must not secretly dress Milky.  "Draw a cat
+        # wearing a hat" describes the picture, not a request for an overlay;
+        # only a direct imperative ("надень", "put on") counts.
+        if asked_to_draw(request) and not wants_wear_overlay(request):
+            return False
         svg = None
         name = ""
         slot = ""
@@ -535,19 +588,40 @@ class MainWindow(QMainWindow):
         self.gif_label.set_outfit(self._outfit)
         return True
 
-    def _save_drawing(self, svg_code):
-        """Write a new drawing to the gallery folder."""
+    def _next_drawing_path(self, extension):
         SVG_DIR.mkdir(parents=True, exist_ok=True)
-        index = self._svg_counter + 1
-        path = SVG_DIR / f"milky_draw_{index}.svg"
+        index = self._drawing_counter + 1
+        path = SVG_DIR / f"milky_draw_{index}{extension}"
         while path.exists():
             index += 1
-            path = SVG_DIR / f"milky_draw_{index}.svg"
+            path = SVG_DIR / f"milky_draw_{index}{extension}"
+        return index, path
+
+    def _save_drawing(self, svg_code):
+        """Write a new SVG drawing to the gallery folder."""
+        index, path = self._next_drawing_path(".svg")
         try:
             path.write_text(svg_code, encoding="utf-8")
         except OSError:
             return None
-        self._svg_counter = index
+        self._drawing_counter = index
+        self._refresh_svg_gallery()
+        return path
+
+    def _save_raster_drawing(self, image):
+        """Write a Cloudflare PNG/JPEG/WebP drawing to the gallery folder."""
+        data = image.get("data") if isinstance(image, dict) else None
+        if not isinstance(data, (bytes, bytearray)) or not data:
+            return None
+        extension = str(image.get("ext") or "").lower()
+        if extension not in {".png", ".jpg", ".jpeg", ".webp"}:
+            extension = ".jpg"
+        index, path = self._next_drawing_path(extension)
+        try:
+            path.write_bytes(bytes(data))
+        except OSError:
+            return None
+        self._drawing_counter = index
         self._refresh_svg_gallery()
         return path
 
@@ -669,7 +743,7 @@ class MainWindow(QMainWindow):
         self.show_svg_gallery()
 
     def show_svg_gallery(self):
-        """Open a scrollable gallery with sharp previews of every drawing."""
+        """Open a scrollable gallery with previews of every SVG/raster drawing."""
         if self._svg_gallery is None:
             self._build_svg_gallery()
         if not self._svg_gallery_placed:
@@ -696,7 +770,7 @@ class MainWindow(QMainWindow):
             self,
             Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint,
         )
-        gallery.setWindowTitle("Milky's SVG Drawings")
+        gallery.setWindowTitle("Milky's Drawings")
         gallery.resize(680, 560)
 
         outer = QVBoxLayout(gallery)
@@ -734,8 +808,8 @@ class MainWindow(QMainWindow):
                 widget.deleteLater()
 
         svg_files = sorted(
-            SVG_DIR.glob("*.svg"),
-            key=lambda item: item.stat().st_mtime if item.exists() else 0,
+            drawing_files(),
+            key=drawing_mtime,
             reverse=True,
         )
         if not svg_files:
@@ -825,10 +899,36 @@ class MainWindow(QMainWindow):
         pixmap = QPixmap(side * 2, side * 2)
         pixmap.setDevicePixelRatio(2.0)
         pixmap.fill(Qt.GlobalColor.transparent)
-        renderer = QSvgRenderer(str(svg_file))
+        if svg_file.suffix.lower() == ".svg":
+            renderer = QSvgRenderer(str(svg_file))
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            renderer.render(painter, QRectF(0, 0, side, side))
+            painter.end()
+            return QIcon(pixmap)
+
+        reader = QImageReader(str(svg_file))
+        reader.setAutoTransform(True)
+        image_size = reader.size()
+        if image_size.isValid():
+            image_size.scale(
+                QSize(side * 2, side * 2),
+                Qt.AspectRatioMode.KeepAspectRatio,
+            )
+            reader.setScaledSize(image_size)
+        source = QPixmap.fromImage(reader.read())
+        if source.isNull():
+            return QIcon()
+        source = source.scaled(
+            side * 2,
+            side * 2,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
         painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        renderer.render(painter, QRectF(0, 0, side, side))
+        x = (side * 2 - source.width()) // 2
+        y = (side * 2 - source.height()) // 2
+        painter.drawPixmap(x, y, source)
         painter.end()
         return QIcon(pixmap)
 
@@ -846,9 +946,26 @@ class MainWindow(QMainWindow):
         preview.resize(560, 620)
 
         layout = QVBoxLayout(preview)
-        svg = QSvgWidget(str(svg_file))
-        svg.setFixedSize(520, 520)
-        layout.addWidget(svg, alignment=Qt.AlignmentFlag.AlignCenter)
+        if svg_file.suffix.lower() == ".svg":
+            artwork = QSvgWidget(str(svg_file))
+            artwork.setFixedSize(520, 520)
+        else:
+            artwork = QLabel()
+            artwork.setFixedSize(520, 520)
+            artwork.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pixmap = QPixmap(str(svg_file))
+            if pixmap.isNull():
+                artwork.setText("Could not load this drawing.")
+            else:
+                artwork.setPixmap(
+                    pixmap.scaled(
+                        520,
+                        520,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+        layout.addWidget(artwork, alignment=Qt.AlignmentFlag.AlignCenter)
 
         caption = QLabel(svg_file.name)
         caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -871,6 +988,7 @@ class MainWindow(QMainWindow):
             return
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
+        self._drawing_settings = self._settings.get("drawing") or {}
         self._tts_settings = self._settings.get("tts") or {}
         self._outfit = load_outfit()
         self.gif_label.set_outfit(self._outfit)

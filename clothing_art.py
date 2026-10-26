@@ -146,18 +146,20 @@ BOW = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
       <stop offset="100%" stop-color="#ef7892"/>
     </radialGradient>
   </defs>
-  <path d="M100 152 L74 136 Q64 152 74 168 Z"
-        fill="url(#bowFill)" stroke="#9e2f47" stroke-width="3"
-        stroke-linejoin="round"/>
-  <path d="M100 152 L126 136 Q136 152 126 168 Z"
-        fill="url(#bowFill)" stroke="#9e2f47" stroke-width="3"
-        stroke-linejoin="round"/>
-  <path d="M94 150 Q100 144 106 150 L104 158 Q100 161 96 158 Z"
-        fill="url(#bowKnot)" stroke="#9e2f47" stroke-width="2.5"
-        stroke-linejoin="round"/>
-  <path d="M76 143 Q82 152 76 161 M124 143 Q118 152 124 161"
-        fill="none" stroke="#ffd9e2" stroke-width="2" opacity="0.6"
-        stroke-linecap="round"/>
+  <g transform="translate(0 13)">
+    <path d="M100 152 L74 136 Q64 152 74 168 Z"
+          fill="url(#bowFill)" stroke="#9e2f47" stroke-width="3"
+          stroke-linejoin="round"/>
+    <path d="M100 152 L126 136 Q136 152 126 168 Z"
+          fill="url(#bowFill)" stroke="#9e2f47" stroke-width="3"
+          stroke-linejoin="round"/>
+    <path d="M94 150 Q100 144 106 150 L104 158 Q100 161 96 158 Z"
+          fill="url(#bowKnot)" stroke="#9e2f47" stroke-width="2.5"
+          stroke-linejoin="round"/>
+    <path d="M76 143 Q82 152 76 161 M124 143 Q118 152 124 161"
+          fill="none" stroke="#ffd9e2" stroke-width="2" opacity="0.6"
+          stroke-linecap="round"/>
+  </g>
 </svg>"""
 
 EARRINGS = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
@@ -223,20 +225,23 @@ NECKLACE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
 CLOTHING_REFERENCE = (
     "\nClothing overlay reference:\n"
     "- Milky's visible face is a floating white line-art cat face in a "
-    "transparent 200x200 frame. The clothing is drawn on top of it; her face "
-    "must stay visible.\n"
+    "transparent 200x200 frame. The app layers body, neck and head items "
+    "behind her face line art, and only face items in front; her face must "
+    "stay visible.\n"
     "- Face bounds: x 18..182, y 53..146. Eyes: x 40..160, y 59..116. "
     "Smile: x 77..123, y 133..144.\n"
     "- Hat or crown: x 40..160, y 6..66. Glasses or mask: x 35..165, "
     "y 70..118. Scarf, collar, bow or necklace: x 55..145, y 145..195. "
-    "Keep the smile at y 133..144 visible; neck items sit below it. "
+    "Never put a neck item above y 145; it would sit on her smile. "
     "Earrings: x 14..36 and 164..186, y 95..130.\n"
     "- Draw only the requested item: no face, body, background, border, "
     "text or watermark. Use a transparent background and exactly "
     "viewBox=\"0 0 200 200\".\n"
     "- Make it look worn and fitted: brims sit on the head, frames surround "
     "the eyes, a scarf wraps under the smile. Use gradients, shading, "
-    "highlights and a few small details. Never fill the whole canvas.\n"
+    "highlights and a few small details. Never fill the whole canvas. "
+    "Do not cover both eyes; a mask may cover the lower face, but her eyes "
+    "must remain visible.\n"
     "- The examples below are style and coordinate guides. Draw the item the "
     "user asked for; do not copy a hat when they asked for a scarf or "
     "glasses.\n"
@@ -253,6 +258,17 @@ _WEAR_RE = re.compile(
     r"\bнос(?:и|ить|ит|ишь|им|ят|ите)\b|\bнош\w*|"
     r"\b(?:put\s+(?:it\s+)?on|wear(?:s|ing)?|wore|try\s+on|"
     r"dress(?:es|ed|ing)?(?:\s+up)?)\b",
+    re.IGNORECASE,
+)
+
+# In a drawing request, "a cat wearing a hat" describes the picture, not a
+# request for Milky to put the hat on.  Only a direct imperative counts as a
+# request for an actual overlay.
+_EXPLICIT_WEAR_RE = re.compile(
+    r"\b(?:надень|надевай|одень|оденься|накинь|накидывай|примерь|примеряй|"
+    r"надеть|надевать|одевать|"
+    r"put\s+(?:it\s+)?on|try\s+on|"
+    r"wear\s+(?:it|this|that|these|those|a|an|the)\b)\b",
     re.IGNORECASE,
 )
 
@@ -302,6 +318,11 @@ _ITEM_PATTERNS = (
 def wants_clothing(text):
     """Return True when the user asks Milky to put something on."""
     return bool(text) and _WEAR_RE.search(text) is not None
+
+
+def wants_wear_overlay(text):
+    """Return True for a direct request to wear an overlay, not a drawing."""
+    return bool(text) and _EXPLICIT_WEAR_RE.search(text) is not None
 
 
 def fallback_clothing(text):

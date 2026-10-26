@@ -7,14 +7,26 @@ from urllib.parse import urlsplit
 import requests
 from dotenv import load_dotenv
 
-from clothing_art import CLOTHING_REFERENCE, wants_clothing
+from clothing_art import (
+    CLOTHING_REFERENCE,
+    wants_clothing,
+    wants_wear_overlay,
+)
+from drawing_skill import DRAWING_COMPACT_GUIDE, DRAWING_SKILL
+from image_service import (
+    build_image_prompt,
+    cloudflare_configured,
+    generate_image,
+)
 from runtime import data_path
 from svg_art import (
     SELFIE_PATHS,
     asked_to_draw,
+    drawing_is_simple,
+    drawing_score,
+    drawing_stats,
     includes_milky,
     is_plain_selfie,
-    subject_art,
     wants_selfie,
 )
 
@@ -132,12 +144,12 @@ Drawing (SVG):
 - If the user asks you to draw, create an image, make a picture, or draw something, fill the svg field with valid SVG markup.
 - Draw exactly the subject in the current request. Do not reuse a subject, background, character or composition from an earlier drawing unless the user explicitly asks for it. Do not draw your own face unless the user asks for you, a selfie or your portrait.
 - When the user asks for "her cat", "её котик" or "my cat", the cat is the subject: draw the cat itself, not Milky.
-- Make every drawing detailed and polished: a soft background, gradients, shading, highlights and several shapes so it looks like a real illustration.
+- Make every drawing detailed and polished: a soft background, gradients, shading, highlights and many shapes so it looks like a real illustration.
 - Use a viewBox like "0 0 200 200" (or larger if the scene needs room) and bright friendly colors.
 - Use <defs> for gradients, semi-transparent ellipses for soft shadows, rounded lines, and small details such as eye highlights, blush or texture.
-- Make the subject complete and recognizable. A cat needs its head, ears, eyes, nose, mouth, whiskers, paws, tail and fur shading; a person needs a face, hair and body; an object needs its characteristic parts. Never return just a few bare rectangles.
-- Keep the markup reasonably compact, but never return just a few bare outlines.
-- If a reference drawing for the requested subject is included below, use it as a quality guide. Match its level of detail and adapt its pose, colors and background to the request.
+- Make the subject complete and recognizable. A cat needs its head, ears, eyes with pupils and highlights, nose, mouth, whiskers, body, paws, tail and fur shading; a person needs a head, hair, neck, torso, arms, hands, legs and a face; an object needs its characteristic parts. Never return just a few bare rectangles, an emoji, a logo, or a stick figure.
+- Keep the markup efficient enough to finish, but never simplify the subject or omit anatomy to save space. A finished illustration is more important than a short SVG.
+- If a reference drawing for the requested subject is included below, treat it only as an anatomy and quality guide. Do not copy its exact composition or return the reference itself; create a new drawing for the request.
 - You have an official self-portrait: white line art of your cat-like face on a warm portrait background. If the user asks for a plain selfie or portrait ("нарисуй себя", "селфи", "draw yourself"), leave svg empty and say in text that you are showing your portrait — the app attaches the official artwork automatically.
 - If the user asks for a scene with you (for example "нарисуй себя в космосе", "draw yourself with a cat"), draw the full scene and reuse the official face paths from the reference message at a suitable scale and position. Add the requested background and objects; do not return only your face. Adapt the face stroke color to the scene (white on dark backgrounds, dark on light ones) so it stays visible.
 - Do not invent a different self-portrait. For every other subject, generate your own original SVG code.
@@ -146,10 +158,11 @@ Drawing (SVG):
 Clothing and accessories:
 - When the user asks you to put on, wear, try on, or dress up in clothing or an accessory (hat, glasses, scarf, bow, crown, earrings and so on), fill wear_name, wear_slot and wear_svg.
 - wear_svg is an overlay for your existing animated face, not a drawing for the gallery. Draw only the clothing item on a transparent background with exactly viewBox="0 0 200 200". Do not draw your face, body, background, border, text or watermark.
-- Your visible face is a floating cat-like face in the center: eyes x≈40..160, y≈59..116; smile x≈77..123, y≈133..144. A hat or crown fits x≈40..160, y≈6..66; glasses or a mask x≈35..165, y≈70..118; a scarf, collar, bow or necklace x≈55..145, y≈145..195; earrings x≈14..36 and 164..186, y≈95..130. Keep the smile visible: neck items sit below it.
+- Your visible face is a floating cat-like face in the center: eyes x≈40..160, y≈59..116; smile x≈77..123, y≈133..144. A hat or crown fits x≈40..160, y≈6..66; glasses or a mask x≈35..165, y≈70..118; a scarf, collar, bow or necklace x≈55..145, y≈145..195; earrings x≈14..36 and 164..186, y≈95..130. Keep the smile visible: neck items start at y=145 or lower. Do not cover both eyes.
 - Make the item look worn and fitted. Use gradients, shading, highlights and a few small details, but never fill the whole canvas.
 - wear_name is a short English label such as "red beanie"; wear_slot is one of head, face, neck, body or other.
 - A request to draw a hat or other clothing is a drawing, not clothing: use svg for that, not wear_svg.
+- A drawing-only request is never a request to put clothing on yourself. In that case leave wear_name, wear_slot and wear_svg empty even if the drawing happens to contain clothes.
 - If the user asks to remove clothing, say that it can be removed in Settings → Outfit. Do not fill the wear fields and do not try to remove it yourself.
 
 Rules:
@@ -170,15 +183,47 @@ SELFIE_REFERENCE = (
     "smile, inside the viewBox with a margin. Do not return only the face.\n"
 )
 
-DRAWING_REFERENCE = (
-    "\nDrawing reference — a finished example of the quality and structure "
-    "expected for the requested subject. Match its level of detail, not a "
-    "simplified version: keep the gradients, soft shading, highlights, "
-    "anatomy and small details, and adapt the pose, colors and background to "
-    "the user's request. If the user also asked for Milky, combine the "
-    "subject with her face reference; otherwise do not replace the subject "
-    "with Milky, a self-portrait, or a scene from earlier in the "
-    "conversation.\n"
+DRAWING_GUIDE = "\n" + DRAWING_SKILL
+DRAWING_HISTORY_LIMIT = 2
+
+DRAWING_SYSTEM_PROMPT = (
+    "You are Milky, a friendly animated cat-like pet. The user asked you to "
+    "draw. Answer in the user's language. Reply with one short sentence, then "
+    "exactly one complete SVG illustration between <svg> and </svg>. Do not "
+    "use JSON, markdown code fences, tool calls, or explanations after the "
+    "closing </svg> tag. The SVG must be self-contained, valid XML, use "
+    "viewBox=\"0 0 200 200\" (or a larger viewBox when a scene needs room), "
+    "and show exactly the requested subject. Do not include <text>, a "
+    "signature, a watermark, or a copied built-in artwork. Do not replace the "
+    "requested subject with Milky unless she is explicitly part of the "
+    "request." + DRAWING_GUIDE
+)
+
+DRAWING_RETRY_SYSTEM = (
+    "You are Milky, a friendly animated cat-like pet. Reply with one short "
+    "sentence in the user's language, then exactly one new SVG illustration "
+    "between <svg> and </svg>. Do not use JSON, markdown code fences, or tool "
+    "calls. The SVG must be self-contained, valid XML, and show exactly the "
+    "requested subject." + DRAWING_COMPACT_GUIDE
+)
+
+DRAWING_COMPACT_SYSTEM = (
+    "You are Milky, a friendly animated cat-like pet. The user asked you to "
+    "draw. Reply with one short sentence in the user's language, then exactly "
+    "one complete SVG between <svg> and </svg>. Do not use JSON, markdown "
+    "fences or tool calls. The SVG must be valid, self-contained, and show "
+    "exactly the requested subject." + DRAWING_COMPACT_GUIDE
+)
+
+DRAWING_RETRY_PROMPT = (
+    "Your previous drawing was too simple: it had too few separate shapes, "
+    "little shading, or missing anatomy. Redraw the same subject from scratch "
+    "as a finished illustration. Use at least 18 paths/shapes, at least 2 "
+    "gradients, a soft background, a cast shadow, darker outlines, highlights, "
+    "and all the subject's parts. Do not copy a built-in artwork or reuse the "
+    "previous composition; create a new SVG. Do not add clothing or "
+    "accessories unless the user asked for them. Return one short sentence, "
+    "then the new SVG inside <svg>...</svg>."
 )
 
 TOOLS = [
@@ -379,13 +424,46 @@ def build_messages(text, history=None, memory=None):
     if (wants_selfie(text) and not is_plain_selfie(text)) or includes_milky(text):
         system += SELFIE_REFERENCE
     if asked_to_draw(text):
-        reference = subject_art(text)
-        if reference:
-            system += DRAWING_REFERENCE + reference + "\n"
+        system += DRAWING_GUIDE
     if wants_clothing(text):
         system += CLOTHING_REFERENCE
     messages = [{"role": "system", "content": system}]
     for item in (history or [])[-HISTORY_LIMIT:]:
+        role = item.get("role")
+        content = str(item.get("content", "")).strip()
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": text})
+    return messages
+
+
+def build_drawing_messages(text, history=None, memory=None):
+    """Build a plain-text drawing request with no subject templates.
+
+    The model returns a normal chat message containing ``<svg>...</svg>``.
+    This avoids escaped JSON/tool-call arguments, which small models often
+    truncated in the middle of a large SVG.
+    """
+    system = DRAWING_SYSTEM_PROMPT + memory_block(memory)
+    if (wants_selfie(text) and not is_plain_selfie(text)) or includes_milky(text):
+        system += SELFIE_REFERENCE
+    messages = [{"role": "system", "content": system}]
+    for item in (history or [])[-DRAWING_HISTORY_LIMIT:]:
+        role = item.get("role")
+        content = str(item.get("content", "")).strip()
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": text})
+    return messages
+
+
+def build_compact_drawing_messages(text, history=None, memory=None):
+    """Small drawing fallback for tight free-tier token limits."""
+    system = DRAWING_COMPACT_SYSTEM + memory_block(memory)
+    if (wants_selfie(text) and not is_plain_selfie(text)) or includes_milky(text):
+        system += SELFIE_REFERENCE
+    messages = [{"role": "system", "content": system}]
+    for item in (history or [])[-DRAWING_HISTORY_LIMIT:]:
         role = item.get("role")
         content = str(item.get("content", "")).strip()
         if role in ("user", "assistant") and content:
@@ -508,14 +586,17 @@ def post_json_request(url, payload, headers):
     return response.json()
 
 
-def post_chat(messages, provider):
+def post_chat(messages, provider, temperature=0.2, max_tokens=None):
     if provider.get("type") == "ollama":
+        options = {"temperature": temperature}
+        if max_tokens:
+            options["num_predict"] = max_tokens
         payload = {
             "model": provider.get("model"),
             "messages": messages,
             "tools": TOOLS,
             "stream": False,
-            "options": {"temperature": 0.2},
+            "options": options,
         }
         if str(provider.get("model", "")).lower().startswith("qwen3"):
             payload["think"] = False
@@ -530,8 +611,10 @@ def post_chat(messages, provider):
         "messages": cached_messages,
         "tools": TOOLS,
         "stream": False,
-        "temperature": 0.2,
+        "temperature": temperature,
     }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
     payload.update(cache_fields)
     data = post_json_request(
         chat_url(provider), payload, request_headers(provider)
@@ -547,14 +630,17 @@ def post_chat(messages, provider):
     }
 
 
-def post_json(messages, provider):
+def post_json(messages, provider, temperature=0.2, max_tokens=None):
     if provider.get("type") == "ollama":
+        options = {"temperature": temperature}
+        if max_tokens:
+            options["num_predict"] = max_tokens
         payload = {
             "model": provider.get("model"),
             "messages": messages,
             "stream": False,
             "format": ANSWER_SCHEMA,
-            "options": {"temperature": 0.2},
+            "options": options,
         }
         if str(provider.get("model", "")).lower().startswith("qwen3"):
             payload["think"] = False
@@ -574,9 +660,11 @@ def post_json(messages, provider):
         "model": provider.get("model"),
         "messages": request_messages,
         "stream": False,
-        "temperature": 0.2,
+        "temperature": temperature,
         "response_format": {"type": "json_object"},
     }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
     payload.update(cache_fields)
     url = chat_url(provider)
     headers = request_headers(provider)
@@ -597,6 +685,50 @@ def post_json(messages, provider):
         raise RuntimeError("API returned an empty response")
     content = (choices[0].get("message") or {}).get("content", "")
     return parse_json_answer(content_text(content))
+
+
+def post_drawing(messages, provider, temperature=0.55, max_tokens=3072):
+    """Request a plain-text reply containing raw SVG markup.
+
+    No tools and no JSON mode: escaping a large SVG inside JSON is a common
+    failure mode for small models, and it used to truncate the drawing.
+    """
+    if provider.get("type") == "ollama":
+        options = {"temperature": temperature}
+        if max_tokens:
+            options["num_predict"] = max_tokens
+        payload = {
+            "model": provider.get("model"),
+            "messages": messages,
+            "stream": False,
+            "options": options,
+        }
+        if str(provider.get("model", "")).lower().startswith("qwen3"):
+            payload["think"] = False
+        data = post_json_request(
+            chat_url(provider), payload, request_headers(provider)
+        )
+        content = data.get("message", {}).get("content", "")
+        return content_text(content)
+
+    cached_messages, cache_fields = apply_openrouter_cache(provider, messages)
+    payload = {
+        "model": provider.get("model"),
+        "messages": cached_messages,
+        "stream": False,
+        "temperature": temperature,
+    }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+    payload.update(cache_fields)
+    data = post_json_request(
+        chat_url(provider), payload, request_headers(provider)
+    )
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("API returned an empty response")
+    content = (choices[0].get("message") or {}).get("content", "")
+    return content_text(content)
 
 
 def remember_fact(memories, key, value):
@@ -911,6 +1043,26 @@ def normalize_svg(value):
     return code or None
 
 
+def split_drawing_reply(content):
+    """Split a plain chat reply into clean SVG markup and the spoken caption."""
+    raw = str(content or "").strip()
+    svg = normalize_svg(raw)
+    if not svg:
+        return None, clean_reply(raw) or None
+    lowered = raw.lower()
+    start = lowered.find("<svg")
+    end = lowered.rfind("</svg>")
+    before = raw[:start] if start != -1 else ""
+    after = raw[end + len("</svg>"):] if end != -1 else ""
+    text = before + "\n" + after
+    text = re.sub(r"```[a-zA-Z]*", " ", text)
+    text = " ".join(text.replace("```", " ").split())
+    text = clean_reply(text)
+    if len(text) > 300:
+        text = text[:297].rstrip() + "..."
+    return svg, text or None
+
+
 WEAR_SLOTS = ("head", "face", "neck", "body", "other")
 
 
@@ -1067,9 +1219,238 @@ def tool_result_message(provider, call):
     return {"role": "tool", "tool_name": name, "content": "Done."}
 
 
-def chat(text, provider, history=None, memory=None):
+def refine_drawing(text, first_svg, provider):
+    """Ask for a fresh, more detailed drawing when the first one is too bare.
+
+    The retry intentionally uses a smaller plain-text prompt without built-in
+    subject references. If the retry fails or is not better, the caller keeps
+    the original SVG.
+    """
+    if not first_svg or wants_selfie(text) or includes_milky(text):
+        return None
+    stats = drawing_stats(first_svg)
+    critique = (
+        f"The previous SVG had only {stats['shapes']} separate shapes, "
+        f"{stats['gradients']} gradients and {stats['colors']} colors. "
+        + DRAWING_RETRY_PROMPT
+    )
+    messages = [
+        {"role": "system", "content": DRAWING_RETRY_SYSTEM},
+        {"role": "user", "content": text + "\n\n" + critique},
+    ]
+    try:
+        content = post_drawing(
+            messages, provider, temperature=0.55, max_tokens=3072
+        )
+    except Exception:
+        return None
+    candidate, _reply = split_drawing_reply(content)
+    if not candidate or not drawing_stats(candidate)["valid"]:
+        return None
+    if SELFIE_SIGNATURE in candidate and not wants_selfie(text):
+        return None
+    if drawing_score(candidate) <= drawing_score(first_svg):
+        return None
+    return candidate
+
+
+def _usable_drawing(text, content):
+    svg, reply = split_drawing_reply(content)
+    if not svg:
+        raise RuntimeError("The model returned no SVG drawing")
+    if not drawing_stats(svg)["valid"]:
+        raise RuntimeError("The model returned an incomplete SVG drawing")
+    if SELFIE_SIGNATURE in svg and not (
+        wants_selfie(text) or includes_milky(text)
+    ):
+        raise RuntimeError("The model drew Milky for another subject")
+    return svg, reply
+
+
+def drawing_chat(text, provider, history=None, memory=None):
+    """Draw through a plain SVG reply instead of a JSON/tool-call field."""
+    messages = build_drawing_messages(text, history, memory)
+    content = post_drawing(
+        messages, provider, temperature=0.55, max_tokens=3072
+    )
+    svg, reply = _usable_drawing(text, content)
+    if drawing_is_simple(svg):
+        refined = refine_drawing(text, svg, provider)
+        if refined:
+            svg = refined
+    return {
+        "emotion": "happy",
+        "text": reply,
+        "memories": [],
+        "open_urls": [],
+        "search_query": None,
+        "svg": svg,
+        "wear": None,
+    }
+
+
+def _image_prompt_subject(text, provider, history=None):
+    """Translate non-English drawing requests into an English image prompt.
+
+    FLUX works best with English prompts.  The translation is a short plain
+    text request, so it costs far fewer tokens than generating a full SVG and
+    leaves most of a free-tier budget for the raster image itself.
+    """
+    text = str(text or "").strip()
+    if not text or not re.search(r"[^\x00-\x7F]", text):
+        return text
+
+    context = []
+    for item in (history or [])[-4:]:
+        role = item.get("role")
+        content = " ".join(str(item.get("content", "")).split())
+        if role in ("user", "assistant") and content:
+            context.append(f"{role}: {content[:400]}")
+    request_text = text
+    if context:
+        request_text = (
+            "Recent conversation (use it only to resolve references):\n"
+            + "\n".join(context)
+            + "\n\nDrawing request:\n"
+            + text
+        )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Turn the drawing request into a concise English image "
+                "description for a text-to-image model. Keep the subject, "
+                "action, colors, clothing, setting, and mood. Resolve "
+                "pronouns from the recent conversation. Reply with the image "
+                "description only: no quotes, labels, or commentary."
+            ),
+        },
+        {"role": "user", "content": request_text},
+    ]
+    try:
+        # Reasoning models spend part of the output budget on hidden reasoning,
+        # so leave enough room for the actual English description.
+        content = post_drawing(
+            messages, provider, temperature=0.2, max_tokens=700
+        )
+    except Exception:
+        return text
+
+    translated = " ".join(content_text(content).split()).strip()
+    translated = translated.strip("\"'`«»")
+    translated = re.sub(
+        r"^(?:image\s+)?prompt\s*:\s*", "", translated, flags=re.IGNORECASE
+    )
+    if not translated:
+        return text
+    return translated[:800]
+
+
+def drawing_chat_cloudflare(
+    text, provider, drawing_settings, history=None, memory=None
+):
+    """Draw one raster image with Cloudflare Workers AI."""
+    subject = _image_prompt_subject(text, provider, history)
+    prompt = build_image_prompt(
+        subject,
+        milky=includes_milky(text) or wants_selfie(text),
+        selfie=wants_selfie(text) and not is_plain_selfie(text),
+    )
+    image = generate_image(
+        prompt,
+        drawing_settings.get("cloudflare_account_id", ""),
+        drawing_settings.get("cloudflare_api_token", ""),
+        model=drawing_settings.get("cloudflare_model"),
+        steps=drawing_settings.get("cloudflare_steps"),
+    )
+    return {
+        "emotion": "happy",
+        "text": None,
+        "memories": [],
+        "open_urls": [],
+        "search_query": None,
+        "svg": None,
+        "wear": None,
+        "image": image,
+    }
+
+
+def drawing_chat_compact(text, provider, history=None, memory=None):
+    """Retry a failed drawing with a short prompt and a smaller token budget."""
+    messages = build_compact_drawing_messages(text, history, memory)
+    content = post_drawing(
+        messages, provider, temperature=0.55, max_tokens=2048
+    )
+    svg, reply = _usable_drawing(text, content)
+    return {
+        "emotion": "happy",
+        "text": reply,
+        "memories": [],
+        "open_urls": [],
+        "search_query": None,
+        "svg": svg,
+        "wear": None,
+    }
+
+
+def chat(text, provider, history=None, memory=None, image_settings=None):
+    # A bare selfie always uses the official artwork.  Do not ask the model for
+    # a large self-portrait tool call just to get a caption.
+    if wants_selfie(text) and is_plain_selfie(text):
+        return {
+            "emotion": "happy",
+            "text": None,
+            "memories": [],
+            "open_urls": [],
+            "search_query": None,
+            "svg": None,
+            "wear": None,
+        }
+
+    # A plain-text SVG reply is much more reliable than a large JSON tool-call
+    # argument.  Keep the tool path for explicit "draw and wear" requests and
+    # as a fallback if the plain drawing path fails.
+    if (
+        asked_to_draw(text)
+        and not wants_wear_overlay(text)
+        and not (wants_selfie(text) and is_plain_selfie(text))
+    ):
+        if cloudflare_configured(image_settings):
+            try:
+                return drawing_chat_cloudflare(
+                    text, provider, image_settings, history, memory
+                )
+            except Exception as error:
+                # Keep the SVG path as a fallback when Cloudflare is
+                # temporarily unavailable, out of daily Neurons, or the token
+                # is wrong.
+                print(f"Cloudflare drawing failed: {error}")
+        try:
+            return drawing_chat(text, provider, history, memory)
+        except Exception:
+            try:
+                return drawing_chat_compact(text, provider, history, memory)
+            except Exception:
+                # Never fall through to JSON/tool calls for a drawing.  A
+                # malformed tool call is exactly what used to surface as
+                # "Failed to parse tool call arguments as JSON".  Returning
+                # no SVG lets the window use its existing last-resort artwork
+                # instead of showing that provider error.
+                return {
+                    "emotion": "sad",
+                    "text": None,
+                    "memories": [],
+                    "open_urls": [],
+                    "search_query": None,
+                    "svg": None,
+                    "wear": None,
+                }
+
     base_messages = build_messages(text, history, memory)
     messages = list(base_messages)
+    drawing_temperature = 0.55 if asked_to_draw(text) else 0.2
+    drawing_max_tokens = 3072 if asked_to_draw(text) else None
     memories = {}
     result = {
         "emotion": None,
@@ -1085,10 +1466,20 @@ def chat(text, provider, history=None, memory=None):
 
     for attempt in range(3):
         try:
-            last_message = post_chat(messages, provider)
+            last_message = post_chat(
+                messages,
+                provider,
+                drawing_temperature,
+                drawing_max_tokens,
+            )
         except Exception as chat_error:
             try:
-                fallback = post_json(base_messages, provider)
+                fallback = post_json(
+                    base_messages,
+                    provider,
+                    drawing_temperature,
+                    drawing_max_tokens,
+                )
             except Exception:
                 raise chat_error
             memories.update(fallback["memories"])
@@ -1124,7 +1515,12 @@ def chat(text, provider, history=None, memory=None):
             messages.append({"role": "system", "content": RETRY_PROMPT})
 
     if not result["responded"]:
-        fallback = post_json(base_messages, provider)
+        fallback = post_json(
+            base_messages,
+            provider,
+            drawing_temperature,
+            drawing_max_tokens,
+        )
         memories.update(fallback["memories"])
         result = {
             "emotion": fallback["emotion"] or result["emotion"],
@@ -1134,6 +1530,17 @@ def chat(text, provider, history=None, memory=None):
             "svg": fallback.get("svg") or result.get("svg"),
             "wear": fallback.get("wear") or result.get("wear"),
         }
+
+    # A first SVG can be valid but still a bare icon. Ask for one fresh,
+    # template-free redraw; keep the original if the retry fails or is worse.
+    if (
+        asked_to_draw(text)
+        and result.get("svg")
+        and drawing_is_simple(result["svg"])
+    ):
+        refined = refine_drawing(text, result["svg"], provider)
+        if refined:
+            result["svg"] = refined
 
     return {
         "emotion": result["emotion"],

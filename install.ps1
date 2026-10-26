@@ -127,6 +127,8 @@ if ($LASTEXITCODE -ne 0) {
 $requiredFiles = @(
     'main.py',
     'ai_client.py',
+    'drawing_skill.py',
+    'image_service.py',
     'settings_dialog.py',
     'settings_store.py',
     'autostart.py',
@@ -158,6 +160,8 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $files = @(
     'main.py',
     'ai_client.py',
+    'drawing_skill.py',
+    'image_service.py',
     'settings_dialog.py',
     'settings_store.py',
     'autostart.py',

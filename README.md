@@ -15,10 +15,10 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 - Provider and model switching in the settings window.
 - Request caching for OpenRouter.
 - Opening links when the user explicitly asks.
-- Detailed SVG drawings: when asked to draw something, Milky saves a polished SVG illustration to `svg_drawings/`, plays a drawing animation, and shows a notification above her face. Recognized subjects get a matching reference illustration in the prompt so the model keeps the requested subject, anatomy, and level of detail.
+- Detailed drawings: when asked to draw something, Milky saves the illustration to `svg_drawings/`, plays a drawing animation, and shows a notification above her face. With Cloudflare Workers AI configured, she uses FLUX.1 schnell for a polished raster JPEG; otherwise she uses the built-in SVG path. The SVG path includes a quality checklist for anatomy, shading, a background and highlights, and retries a bare illustration with a fresh, template-free prompt. If Cloudflare is unavailable, the app falls back to SVG automatically.
 - Official self-portrait: plain selfie requests use her line-art portrait; scene requests such as **нарисуй себя в космосе** draw the full scene.
-- AI-generated clothing and accessories: ask her to put on a hat, glasses, scarf, crown or other item and she generates a transparent SVG overlay over her animated face. The outfit persists across restarts and can be managed in **Settings → Outfit**.
-- SVG drawing gallery from the tray menu, with sharp click-to-enlarge previews and a Delete button for each drawing.
+- AI-generated clothing and accessories: ask her to put on a hat, glasses, scarf, crown or other item and she generates a transparent SVG overlay. Body, neck and head items are layered behind her face line art so clothing cannot hide her eyes or smile; glasses and masks stay in front and are checked for eye clearance. A drawing request never adds clothing on its own. The outfit persists across restarts and can be managed in **Settings → Outfit**.
+- Drawing gallery from the tray menu, with click-to-enlarge previews for SVG, PNG, JPEG and WebP drawings and a Delete button for each one. The gallery keeps existing SVG drawings and new Cloudflare raster drawings side by side.
 - Text-to-speech replies through a Milka TTS server or Groq, with configurable endpoint and voice.
 - System tray icon and context menu.
 - Linux and Windows installers with optional autostart.
@@ -158,6 +158,32 @@ GROQ_MODEL=llama-3.3-70b-versatile
 
 After startup, the app reads settings from `settings.json`. If you changed `.env` after settings were already saved, update the endpoint in the settings window or delete `settings.json`.
 
+## Cloudflare Workers AI Drawings
+
+Milky can render drawings with **Cloudflare Workers AI** and **FLUX.1 schnell**. This is optional; when it is not configured, the original SVG drawing path is used.
+
+1. Open the [Workers AI page](https://dash.cloudflare.com/?to=/:account/ai/workers-ai) in the Cloudflare dashboard. Sign up first if needed.
+2. Select **Use REST API**.
+3. Select **Create a Workers AI API Token**, review the prefilled permissions, then select **Create API Token**. The token secret is shown only once, so copy it immediately.
+4. Copy the **Account ID** shown next to the token instructions on the same page.
+5. Enter the account ID, token and model in **Settings → Model and voice → Drawings**, or put them in `.env`:
+
+If you create a custom token instead of using the template, grant both **Workers AI - Read** and **Workers AI - Edit** for the account, as required by the Workers AI REST API.
+
+```dotenv
+DRAWING_PROVIDER=cloudflare
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_API_TOKEN=your_workers_ai_token
+CLOUDFLARE_IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
+CLOUDFLARE_IMAGE_STEPS=4
+```
+
+If both Cloudflare credentials are present and `DRAWING_PROVIDER` is unset, Milky selects Cloudflare automatically. Set `DRAWING_PROVIDER=model` to keep the SVG path. Ask **нарисуй котика**, **draw a cat** or **нарисуй себя в космосе** to test it.
+
+The free plan includes **10,000 Neurons per day**, resetting daily at **00:00 UTC**. The default 1024×1024 image at 4 steps costs about 58 Neurons, which is roughly 170 images per day. The **Test Cloudflare** button reports credential, quota and network errors immediately and also consumes a small amount of the daily allocation. During a chat, Cloudflare errors are logged and Milky falls back to the SVG path.
+
+FLUX is text-to-image only, so it cannot read Milky's SVG reference or guarantee her exact appearance. A short English description of her face and ears is included when she appears in a scene. Non-English drawing requests are translated to English with the active chat provider before they go to FLUX; if translation fails, the original text is sent. All generated raster drawings are saved in `svg_drawings/` and appear in the same gallery as SVG files.
+
 ## Running
 
 ```bash
@@ -171,14 +197,14 @@ python main.py
 - Enter — send a message.
 - Esc — close the input field.
 - Right click — open the context menu (Settings, Show / Hide, Quit).
-- Tray menu — Show / Hide, Settings, Show SVG gallery, Quit.
+- Tray menu — Show / Hide, Settings, Show drawing gallery, Quit.
 - Double-click the tray icon — show or hide the window.
 
-Ask Milky to **draw a cat**, **draw a sun**, **нарисуй котика** or **нарисуй цветок**. Milky keeps her face animation, plays `milka_drawing.gif` and shows a **«Новый рисунок в галерее!»** notification above her. The drawing is saved in `svg_drawings/`; click the notification or open the tray menu → **Show SVG gallery** to browse sharp previews and click any drawing to enlarge it. Each drawing in the gallery has a **Delete** button.
+Ask Milky to **draw a cat**, **draw a sun**, **нарисуй котика** or **нарисуй цветок**. Milky keeps her face animation, plays `milka_drawing.gif` and shows a **«Новый рисунок в галерее!»** notification above her. The drawing is saved in `svg_drawings/`; click the notification or open the tray menu → **Show drawing gallery** to browse previews and click any drawing to enlarge it. The gallery shows both SVG and raster drawings. Each drawing has a **Delete** button.
 
 Ask **нарисуй себя**, **селфи**, **автопортрет** or **draw yourself** and she will use her official line-art self-portrait. If you ask for a scene with her, such as **нарисуй себя в космосе** or **draw yourself with a cat**, she draws the full scene instead of only the portrait.
 
-Ask **одень шапку**, **надень очки**, **put on a scarf** or **wear a crown** and Milky generates a transparent clothing overlay that sits on top of her animated face. She can wear several items at once in different layers (for example, a hat, glasses and a scarf). The outfit is saved in `outfit.json` and is restored every time the app starts. Open **Settings → Outfit** to remove an individual item or click **Remove all**. Outfit changes are written when you click **Save**.
+Ask **одень шапку**, **надень очки**, **put on a scarf** or **wear a crown** and Milky generates a transparent clothing overlay. Body, neck and head items are layered behind her face line art, so a scarf or hat cannot cover her eyes or smile; glasses and masks are layered in front and must leave her eyes visible. She can wear several items at once in different slots (for example, a hat, glasses and a scarf). The outfit is saved in `outfit.json` and is restored every time the app starts. Open **Settings → Outfit** to remove an individual item or click **Remove all**. Outfit changes are written when you click **Save**.
 
 ## Autostart
 
@@ -215,6 +241,12 @@ When installing with `install.sh` or `install.ps1`, autostart can be enabled imm
 | `MILKY_TTS_SPEED` | Milka TTS speed | `1.0` |
 | `GROQ_TTS_MODEL` | Groq TTS model | `canopylabs/orpheus-v1-english` |
 | `GROQ_TTS_VOICE` | Groq TTS voice | `hannah` |
+| `DRAWING_PROVIDER` | Drawing engine (`model` or `cloudflare`) | auto: `cloudflare` when credentials exist, otherwise `model` |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID | empty |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Workers AI access | empty |
+| `CLOUDFLARE_IMAGE_MODEL` | Cloudflare image model | `@cf/black-forest-labs/flux-1-schnell` |
+| `CLOUDFLARE_IMAGE_STEPS` | FLUX sampling steps (1–8) | `4` |
+| `CLOUDFLARE_IMAGE_TIMEOUT` | Image request timeout in seconds | `120` |
 
 ## Project Structure
 
@@ -222,8 +254,10 @@ When installing with `install.sh` or `install.ps1`, autostart can be enabled imm
 milky/
 ├── main.py                 # window, animations, tray, and app startup
 ├── ai_client.py            # model requests, memory, and history
-├── settings_dialog.py      # endpoint, voice, and outfit settings window
+├── drawing_skill.py        # SVG drawing quality guide
+├── settings_dialog.py      # endpoint, voice, drawing and outfit settings
 ├── settings_store.py       # loading and saving settings.json
+├── image_service.py        # Cloudflare Workers AI image generation
 ├── outfit_store.py         # loading and saving outfit.json
 ├── clothing_art.py         # clothing prompt guide and fallback overlays
 ├── clothing_overlay.py     # clothing validation and face overlay rendering
@@ -248,16 +282,16 @@ milky/
 ## Limitations
 
 - Built-in web search is not connected to the interface yet. `web_search.py` remains an experimental module.
-- Drawing quality depends on the selected model. Recognized subjects get a detailed reference, and a self-portrait scene is rejected when the user asked for another subject. If the model still returns no usable SVG, Milky falls back to her own detailed illustrations.
-- Clothing quality depends on the selected model. Common accessories (hat, crown, glasses, mask, scarf, necklace, bow and earrings) have built-in fallbacks, and an overlay with a background or face is rejected before it is worn.
+- Drawing quality depends on the selected engine and model. Cloudflare uses FLUX.1 schnell and returns a 1024×1024 JPEG; it is text-to-image, so it cannot exactly reproduce Milky's official line-art portrait. The SVG path uses the full drawing skill in `drawing_skill.py`: composition, anatomy recipes, lighting, SVG technique and a finishing checklist. The model creates its own SVG without subject templates. If the first SVG illustration is too bare, Milky asks for one fresh, more detailed drawing; the built-in illustrations are only a last-resort fallback when the provider returns no valid SVG. Drawing-only requests never create clothing overlays.
+- Clothing quality depends on the selected model. Common accessories (hat, crown, glasses, mask, scarf, necklace, bow and earrings) have built-in fallbacks. An overlay with a background or face is rejected, neck items must sit below the smile, and face items must keep the eyes visible.
 - TTS needs a running Milka TTS server or a valid Groq API key.
-- Cloud providers require a working API key and internet access.
+- Cloud providers require a working API key and internet access. Cloudflare image generation also needs its account ID and a Workers AI token; the free daily Neuron limit can be exhausted by frequent drawing.
 - Response speed depends on the selected model and hardware. Local models on a weak CPU may answer slowly.
 
 ## Pre-Commit Checks
 
 ```bash
-python -m py_compile ai_client.py autostart.py clothing_art.py clothing_overlay.py main.py outfit_store.py runtime.py settings_dialog.py settings_store.py svg_art.py tts.py web_search.py
+python -m py_compile ai_client.py autostart.py clothing_art.py clothing_overlay.py drawing_skill.py image_service.py main.py outfit_store.py runtime.py settings_dialog.py settings_store.py svg_art.py tts.py web_search.py
 bash -n install.sh
 ```
 

@@ -1,4 +1,6 @@
 import copy
+import json
+from urllib.parse import quote
 
 from PySide6.QtCore import QByteArray, QRectF, QSize, Qt, QUrl
 from PySide6.QtGui import QIcon, QPainter, QPixmap
@@ -38,8 +40,10 @@ from autostart import (
 )
 from outfit_store import SLOT_LABELS, load_outfit, save_outfit
 from settings_store import (
+    DRAWING_PROVIDERS,
     PROVIDER_TYPES,
     default_tts,
+    normalize_drawing,
     save_settings,
 )
 
@@ -54,14 +58,18 @@ class SettingsDialog(QDialog):
         self._settings = copy.deepcopy(settings)
         self._providers = self._settings["providers"]
         self._tts = self._settings.get("tts") or default_tts()
+        self._drawing = normalize_drawing(self._settings.get("drawing"))
         self._outfit = load_outfit()
         self._loading = False
         self._network = QNetworkAccessManager(self)
         self._health_reply = None
+        self._cloudflare_reply = None
+        self._cloudflare_testing = False
 
         self._build_ui()
         self._refresh_list(self._active_row())
         self._load_tts()
+        self._load_drawing()
         self._refresh_outfit_list()
 
     def _build_ui(self):
@@ -192,6 +200,63 @@ class SettingsDialog(QDialog):
         tts_form.addRow(tts_hint)
         general_root.addWidget(tts_group)
 
+        drawing_group = QGroupBox("Drawings")
+        drawing_form = QFormLayout(drawing_group)
+        self.drawing_provider_combo = QComboBox()
+        for value, label in DRAWING_PROVIDERS:
+            self.drawing_provider_combo.addItem(label, value)
+
+        self.cloudflare_account_edit = QLineEdit()
+        self.cloudflare_account_edit.setPlaceholderText(
+            "Cloudflare account ID"
+        )
+        self.cloudflare_token_edit = QLineEdit()
+        self.cloudflare_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.cloudflare_token_edit.setPlaceholderText(
+            "API token with Workers AI access"
+        )
+        self.cloudflare_model_edit = QLineEdit()
+        self.cloudflare_model_edit.setPlaceholderText(
+            "@cf/black-forest-labs/flux-1-schnell"
+        )
+        self.cloudflare_test_button = QPushButton("Test Cloudflare")
+        self.cloudflare_status = QLabel("")
+        self.cloudflare_status.setWordWrap(True)
+        self.cloudflare_status.setStyleSheet("color: #777;")
+
+        drawing_hint = QLabel(
+            "Cloudflare Workers AI renders a polished JPEG with FLUX.1 schnell. "
+            "The free plan includes 10,000 Neurons per day, roughly 170 images "
+            "at the default 4 steps, and resets daily at 00:00 UTC. The "
+            "drawing gallery keeps both SVG and JPEG/PNG drawings.\n"
+            "Open <a href=\"https://dash.cloudflare.com/?to=/:account/ai/"
+            "workers-ai\">Workers AI</a>, select <b>Use REST API</b>, then "
+            "select <b>Create a Workers AI API Token</b> and copy both the "
+            "token and the <b>Account ID</b>. The token secret is shown only "
+            "once. The test button renders one small image and uses a few "
+            "free Neurons. If Cloudflare is unavailable, Milky falls back to "
+            "her SVG drawing path."
+        )
+        drawing_hint.setWordWrap(True)
+        drawing_hint.setTextFormat(Qt.TextFormat.RichText)
+        drawing_hint.setOpenExternalLinks(True)
+        drawing_hint.setStyleSheet("color: #777;")
+
+        drawing_form.addRow("Drawing engine", self.drawing_provider_combo)
+        drawing_form.addRow(
+            "Cloudflare account ID", self.cloudflare_account_edit
+        )
+        drawing_form.addRow(
+            "Cloudflare API token", self.cloudflare_token_edit
+        )
+        drawing_form.addRow(
+            "Cloudflare model", self.cloudflare_model_edit
+        )
+        drawing_form.addRow("", self.cloudflare_test_button)
+        drawing_form.addRow(self.cloudflare_status)
+        drawing_form.addRow(drawing_hint)
+        general_root.addWidget(drawing_group)
+
         outfit_tab = QWidget()
         outfit_layout = QVBoxLayout(outfit_tab)
         outfit_hint = QLabel(
@@ -248,6 +313,16 @@ class SettingsDialog(QDialog):
         self.groq_model_edit.textChanged.connect(self._tts_changed)
         self.groq_voice_edit.textChanged.connect(self._tts_changed)
         self.tts_test_button.clicked.connect(self._test_milka_tts)
+
+        self.drawing_provider_combo.currentIndexChanged.connect(
+            self._drawing_changed
+        )
+        self.cloudflare_account_edit.textChanged.connect(
+            self._drawing_changed
+        )
+        self.cloudflare_token_edit.textChanged.connect(self._drawing_changed)
+        self.cloudflare_model_edit.textChanged.connect(self._drawing_changed)
+        self.cloudflare_test_button.clicked.connect(self._test_cloudflare)
 
         box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -354,6 +429,181 @@ class SettingsDialog(QDialog):
         ):
             widget.setEnabled(enabled and provider == "groq")
         self.tts_test_button.setEnabled(enabled and provider == "milka")
+
+    def _load_drawing(self):
+        self._loading = True
+        provider = self._drawing.get("provider", "model")
+        index = self.drawing_provider_combo.findData(provider)
+        self.drawing_provider_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.cloudflare_account_edit.setText(
+            self._drawing.get("cloudflare_account_id", "")
+        )
+        self.cloudflare_token_edit.setText(
+            self._drawing.get("cloudflare_api_token", "")
+        )
+        self.cloudflare_model_edit.setText(
+            self._drawing.get(
+                "cloudflare_model",
+                "@cf/black-forest-labs/flux-1-schnell",
+            )
+        )
+        self._loading = False
+        self._update_drawing_state()
+
+    def _drawing_changed(self):
+        self._store_drawing()
+        if not self._cloudflare_testing:
+            self.cloudflare_status.setText("")
+        self._update_drawing_state()
+
+    def _store_drawing(self):
+        if self._loading:
+            return
+        provider = self.drawing_provider_combo.currentData() or "model"
+        api_token = self.cloudflare_token_edit.text().strip()
+        if api_token.lower().startswith("bearer "):
+            api_token = api_token[7:].strip()
+        try:
+            steps = int(self._drawing.get("cloudflare_steps", 4))
+        except (TypeError, ValueError):
+            steps = 4
+        self._drawing = {
+            "provider": provider,
+            "cloudflare_account_id": self.cloudflare_account_edit.text().strip(),
+            "cloudflare_api_token": api_token,
+            "cloudflare_model": self.cloudflare_model_edit.text().strip()
+            or "@cf/black-forest-labs/flux-1-schnell",
+            "cloudflare_steps": max(1, min(8, steps)),
+        }
+        self._settings["drawing"] = dict(self._drawing)
+
+    def _update_drawing_state(self):
+        cloudflare = (
+            (self.drawing_provider_combo.currentData() or "model")
+            == "cloudflare"
+        )
+        for widget in (
+            self.cloudflare_account_edit,
+            self.cloudflare_token_edit,
+            self.cloudflare_model_edit,
+        ):
+            widget.setEnabled(cloudflare)
+        self.cloudflare_test_button.setEnabled(
+            cloudflare and not self._cloudflare_testing
+        )
+
+    def _test_cloudflare(self):
+        self._store_drawing()
+        drawing = self._drawing
+        account_id = drawing.get("cloudflare_account_id", "").strip()
+        api_token = drawing.get("cloudflare_api_token", "").strip()
+        if api_token.lower().startswith("bearer "):
+            api_token = api_token[7:].strip()
+        if not account_id or not api_token:
+            self.cloudflare_status.setText(
+                "Enter the Cloudflare account ID and API token first."
+            )
+            return
+
+        if self._cloudflare_reply is not None:
+            self._cloudflare_reply.abort()
+            self._cloudflare_reply.deleteLater()
+            self._cloudflare_reply = None
+
+        model = drawing.get(
+            "cloudflare_model", "@cf/black-forest-labs/flux-1-schnell"
+        ).strip() or "@cf/black-forest-labs/flux-1-schnell"
+        url = (
+            "https://api.cloudflare.com/client/v4/accounts/"
+            f"{quote(account_id, safe='')}/ai/run/"
+            f"{quote(model, safe='@/')}"
+        )
+        payload = {
+            "prompt": (
+                "A small red apple on a wooden table, warm storybook "
+                "illustration, simple background"
+            ),
+            "steps": 4,
+        }
+        request = QNetworkRequest(QUrl(url))
+        request.setRawHeader(
+            b"Authorization", f"Bearer {api_token}".encode("utf-8")
+        )
+        request.setHeader(
+            QNetworkRequest.KnownHeaders.ContentTypeHeader,
+            "application/json",
+        )
+        request.setTransferTimeout(120000)
+
+        self._cloudflare_testing = True
+        self.cloudflare_status.setText("Generating a test image...")
+        self._update_drawing_state()
+        reply = self._network.post(
+            request,
+            QByteArray(json.dumps(payload).encode("utf-8")),
+        )
+        self._cloudflare_reply = reply
+        reply.finished.connect(lambda r=reply: self._on_cloudflare_reply(r))
+
+    def _on_cloudflare_reply(self, reply):
+        if reply is not self._cloudflare_reply:
+            reply.deleteLater()
+            return
+        self._cloudflare_reply = None
+        self._cloudflare_testing = False
+
+        status = reply.attribute(
+            QNetworkRequest.Attribute.HttpStatusCodeAttribute
+        )
+        body = bytes(reply.readAll()).decode("utf-8", "replace").strip()
+        data = None
+        try:
+            data = json.loads(body) if body else None
+        except ValueError:
+            data = None
+
+        error = None
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            error = reply.errorString()
+        if status != 200:
+            detail = ""
+            if isinstance(data, dict):
+                parts = []
+                for item in data.get("errors") or []:
+                    if isinstance(item, dict):
+                        parts.append(str(item.get("message") or ""))
+                    elif item:
+                        parts.append(str(item))
+                detail = "; ".join(part for part in parts if part)
+            detail = detail or body
+            detail = " ".join(detail.split())
+            if len(detail) > 220:
+                detail = detail[:217] + "..."
+            error = error or f"HTTP {status}"
+            if detail:
+                error += f": {detail}"
+        elif not isinstance(data, dict) or data.get("success") is False:
+            error = "Cloudflare returned an error response."
+        else:
+            result = data.get("result")
+            image = result.get("image") if isinstance(result, dict) else None
+            if (
+                not isinstance(image, str)
+                or len(image) < 100
+                or not image.startswith(
+                    ("/9j/", "iVBOR", "UklGR", "data:image")
+                )
+            ):
+                error = "Cloudflare returned no image data."
+
+        if error:
+            self.cloudflare_status.setText(f"Cloudflare error: {error}")
+        else:
+            self.cloudflare_status.setText(
+                "Cloudflare is ready: FLUX returned a JPEG image."
+            )
+        reply.deleteLater()
+        self._update_drawing_state()
 
     def _outfit_icon(self, svg):
         side = 44
@@ -529,6 +779,7 @@ class SettingsDialog(QDialog):
     def accept(self):
         self._store_current()
         self._store_tts()
+        self._store_drawing()
         names = [provider["name"] for provider in self._providers]
         if any(not name for name in names):
             QMessageBox.warning(self, "Settings", "Every endpoint must have a name.")
@@ -572,6 +823,24 @@ class SettingsDialog(QDialog):
                     self,
                     "Text to speech",
                     "Enter the Groq API key or set GROQ_API_KEY in .env.",
+                )
+                return
+        drawing = self._settings.get("drawing") or {}
+        if drawing.get("provider") == "cloudflare":
+            if not drawing.get("cloudflare_account_id"):
+                QMessageBox.warning(
+                    self,
+                    "Drawings",
+                    "Enter the Cloudflare account ID, or select the SVG "
+                    "drawing engine.",
+                )
+                return
+            if not drawing.get("cloudflare_api_token"):
+                QMessageBox.warning(
+                    self,
+                    "Drawings",
+                    "Enter the Cloudflare API token, or select the SVG "
+                    "drawing engine.",
                 )
                 return
         autostart = self.autostart_check.isChecked()

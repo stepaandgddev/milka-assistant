@@ -25,11 +25,11 @@ _SIZE_ATTRIBUTE_RE = re.compile(
     r'(?<![\w-])(?:width|height)\s*=\s*["\']([^"\']+)["\']',
     re.IGNORECASE,
 )
-_BOW_NAME_RE = re.compile(
-    r"\bбант\w*|\bбабочк\w*|"
-    r"\b(?:bow|bows|bowtie|bow-tie|necktie|neck-tie)\b",
-    re.IGNORECASE,
-)
+# Milky's eyes occupy x 40..160, y 59..116.  A face accessory may frame them
+# or tint them with transparent lenses, but it must not turn them into an
+# opaque wall.
+EYE_ZONE = (40, 59, 161, 117)
+FACE_EYE_MAX_OPAQUE = 0.72
 
 
 def _full_canvas_size(value):
@@ -147,38 +147,67 @@ def clothing_bounds(value):
     return left, top, right, bottom
 
 
+def _opaque_ratio(image, box, threshold=160):
+    """Return the fraction of opaque pixels in a rectangle."""
+    left, top, right, bottom = box
+    total = 0
+    opaque = 0
+    for y in range(top, bottom):
+        for x in range(left, right):
+            total += 1
+            if ((image.pixel(x, y) >> 24) & 0xFF) >= threshold:
+                opaque += 1
+    return opaque / total if total else 0.0
+
+
 def clothing_fits(slot, value, name=""):
-    """Keep common accessories in their intended vertical band."""
+    """Keep accessories in their intended band and the eyes unobstructed."""
     bounds = clothing_bounds(value)
     if bounds is None:
         return False
     _left, top, _right, bottom = bounds
     if slot == "head":
-        return bottom <= 82
+        # A hat may sit on the forehead, not over the eyes.
+        return bottom <= 76
     if slot == "face":
-        return top >= 52 and bottom <= 162
+        if top < 52 or bottom > 162:
+            return False
+        code = clean_svg_markup(value)
+        image = _render_overlay(strip_canvas_rects(code)) if code else None
+        if image is None:
+            return False
+        return _opaque_ratio(image, EYE_ZONE) <= FACE_EYE_MAX_OPAQUE
     if slot == "neck":
-        # A bow tie naturally sits a little higher than a scarf or necklace.
-        minimum = 132 if _BOW_NAME_RE.search(str(name or "")) else 138
-        return top >= minimum
+        # Keep scarves, bow ties and necklaces below the smile.
+        return top >= 145
     if slot == "body":
-        return top >= 140
+        # Body clothing starts below the floating face.
+        return top >= 145
     return True
 
 
 class AvatarLabel(QLabel):
-    """The animated face label with transparent clothing painted on top."""
+    """The animated face label with face-safe clothing layers.
+
+    Body, neck, head and other items are painted *behind* the animated face
+    line art.  That keeps the eyes and smile visible even when a scarf, hat or
+    collar is large.  Only face-slot items (glasses and masks) are painted in
+    front, because they are meant to sit over the face; those are separately
+    checked for eye clearance before they are worn.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._renderers = []
+        self._back_renderers = []
+        self._front_renderers = []
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setStyleSheet("background: transparent;")
 
     def set_outfit(self, items):
-        """Replace the items drawn over the current animation frame."""
+        """Replace the layers drawn around the current animation frame."""
         order = {slot: index for index, slot in enumerate(SLOT_ORDER)}
-        renderers = []
+        back = []
+        front = []
         valid_items = (
             entry for entry in (items or []) if isinstance(entry, dict)
         )
@@ -193,17 +222,38 @@ class AvatarLabel(QLabel):
             renderer = QSvgRenderer(data)
             if renderer.isValid():
                 # Keep the bytes alive together with the renderer.
-                renderers.append((renderer, data))
-        self._renderers = renderers
+                target = front if item.get("slot") == "face" else back
+                target.append((renderer, data))
+        self._back_renderers = back
+        self._front_renderers = front
         self.update()
 
     def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self._renderers:
+        """Compose clothing, the current face frame, then face accessories."""
+        movie = self.movie()
+        if movie is None:
+            super().paintEvent(event)
             return
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Clear the previous frame; otherwise transparent pixels can ghost.
+        painter.setCompositionMode(
+            QPainter.CompositionMode.CompositionMode_Source
+        )
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        painter.setCompositionMode(
+            QPainter.CompositionMode.CompositionMode_SourceOver
+        )
+
         target = QRectF(self.rect())
-        for renderer, _data in self._renderers:
+        for renderer, _data in self._back_renderers:
+            renderer.render(painter, target)
+
+        frame = movie.currentPixmap()
+        if not frame.isNull():
+            painter.drawPixmap(target.topLeft(), frame)
+
+        for renderer, _data in self._front_renderers:
             renderer.render(painter, target)
         painter.end()

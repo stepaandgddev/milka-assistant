@@ -1108,3 +1108,82 @@ def draw_for(text):
         if pattern.search(text):
             return svg
     return DEFAULT
+
+
+# ---------------------------------------------------------------------------
+# Drawing quality
+# ---------------------------------------------------------------------------
+
+_DRAWING_SHAPE_RE = re.compile(
+    r"<(?:path|circle|ellipse|rect|polygon|polyline|line)\b",
+    re.IGNORECASE,
+)
+_DRAWING_GRADIENT_RE = re.compile(
+    r"<(?:linearGradient|radialGradient)\b",
+    re.IGNORECASE,
+)
+_DRAWING_COLOR_ATTR_RE = re.compile(
+    r"(?:fill|stroke|stop-color)\s*=\s*[\"']([^\"']+)[\"']",
+    re.IGNORECASE,
+)
+_DRAWING_HEX_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+_DRAWING_UNSAFE_RE = re.compile(
+    r"<(?:text|image|foreignObject|script)\b",
+    re.IGNORECASE,
+)
+
+
+def drawing_stats(svg):
+    """Return simple, model-independent complexity stats for an SVG."""
+    code = str(svg or "")
+    lowered = code.lower()
+    colors = set()
+    for value in _DRAWING_COLOR_ATTR_RE.findall(code):
+        value = value.strip().lower()
+        if (
+            value
+            and value not in {"none", "transparent", "currentcolor"}
+            and not value.startswith("url(")
+        ):
+            colors.add(value)
+    colors.update(value.lower() for value in _DRAWING_HEX_RE.findall(code))
+    return {
+        "valid": "<svg" in lowered and "</svg>" in lowered,
+        "unsafe": bool(_DRAWING_UNSAFE_RE.search(code)),
+        "shapes": len(_DRAWING_SHAPE_RE.findall(code)),
+        "gradients": len(_DRAWING_GRADIENT_RE.findall(code)),
+        "colors": len(colors),
+        "has_defs": "<defs" in lowered,
+        "has_opacity": "opacity" in lowered,
+    }
+
+
+def drawing_score(svg):
+    """Score an illustration from 0 to 100 using its SVG structure.
+
+    This is deliberately semantic-free: it measures the kind of visual
+    richness the drawing prompt asks for (layers, gradients, colors and
+    highlights) without comparing the drawing to a built-in template.
+    """
+    stats = drawing_stats(svg)
+    if not stats["valid"] or stats["unsafe"]:
+        return 0
+    return round(
+        min(stats["shapes"] / 22.0, 1.0) * 50
+        + min(stats["gradients"] / 2.0, 1.0) * 20
+        + min(stats["colors"] / 10.0, 1.0) * 20
+        + (5 if stats["has_defs"] else 0)
+        + (5 if stats["has_opacity"] else 0)
+    )
+
+
+def drawing_is_simple(svg):
+    """Return True when an SVG is too bare to be a finished illustration."""
+    stats = drawing_stats(svg)
+    if not stats["valid"] or stats["unsafe"]:
+        return True
+    if stats["shapes"] < 16 or stats["gradients"] < 2:
+        return True
+    if stats["colors"] < 6 or not stats["has_opacity"]:
+        return True
+    return drawing_score(svg) < 62
