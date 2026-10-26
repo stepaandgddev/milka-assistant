@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 import requests
 from dotenv import load_dotenv
 
+from clothing_art import CLOTHING_REFERENCE, wants_clothing
 from runtime import data_path
 from svg_art import (
     SELFIE_PATHS,
@@ -97,6 +98,7 @@ The respond tool:
 - remember_key and remember_value — only when the user shares a new lasting fact about themselves.
 - open_urls — only when the user directly asks to open a site or link.
 - search_query — only when the user directly asks you to find something or search the web.
+- wear_name, wear_slot and wear_svg — only when the user asks you to put on clothing or an accessory.
 
 Emotions:
 - idle — neutral state, greeting, short reply.
@@ -140,6 +142,15 @@ Drawing (SVG):
 - If the user asks for a scene with you (for example "нарисуй себя в космосе", "draw yourself with a cat"), draw the full scene and reuse the official face paths from the reference message at a suitable scale and position. Add the requested background and objects; do not return only your face. Adapt the face stroke color to the scene (white on dark backgrounds, dark on light ones) so it stays visible.
 - Do not invent a different self-portrait. For every other subject, generate your own original SVG code.
 - In text, briefly say what you drew.
+
+Clothing and accessories:
+- When the user asks you to put on, wear, try on, or dress up in clothing or an accessory (hat, glasses, scarf, bow, crown, earrings and so on), fill wear_name, wear_slot and wear_svg.
+- wear_svg is an overlay for your existing animated face, not a drawing for the gallery. Draw only the clothing item on a transparent background with exactly viewBox="0 0 200 200". Do not draw your face, body, background, border, text or watermark.
+- Your visible face is a floating cat-like face in the center: eyes x≈40..160, y≈59..116; smile x≈77..123, y≈133..144. A hat or crown fits x≈40..160, y≈6..66; glasses or a mask x≈35..165, y≈70..118; a scarf, collar, bow or necklace x≈55..145, y≈145..195; earrings x≈14..36 and 164..186, y≈95..130. Keep the smile visible: neck items sit below it.
+- Make the item look worn and fitted. Use gradients, shading, highlights and a few small details, but never fill the whole canvas.
+- wear_name is a short English label such as "red beanie"; wear_slot is one of head, face, neck, body or other.
+- A request to draw a hat or other clothing is a drawing, not clothing: use svg for that, not wear_svg.
+- If the user asks to remove clothing, say that it can be removed in Settings → Outfit. Do not fill the wear fields and do not try to remove it yourself.
 
 Rules:
 - Never write the emotion name inside text.
@@ -221,6 +232,30 @@ TOOLS = [
                             "asks for her."
                         ),
                     },
+                    "wear_name": {
+                        "type": "string",
+                        "description": (
+                            "Optional. Short English name of a clothing item or "
+                            "accessory the user asked Milky to put on."
+                        ),
+                    },
+                    "wear_slot": {
+                        "type": "string",
+                        "enum": ["head", "face", "neck", "body", "other"],
+                        "description": (
+                            "Optional. Layer for the clothing item. Use head for "
+                            "hats and crowns, face for glasses and masks, neck for "
+                            "scarves, bows and necklaces."
+                        ),
+                    },
+                    "wear_svg": {
+                        "type": "string",
+                        "description": (
+                            "Optional. Transparent 200x200 SVG overlay containing "
+                            "only the clothing item, with no face or background. "
+                            "Use only when the user asks Milky to wear something."
+                        ),
+                    },
                 },
                 "required": ["text", "emotion"],
             },
@@ -241,6 +276,12 @@ ANSWER_SCHEMA = {
         },
         "search_query": {"type": "string"},
         "svg": {"type": "string"},
+        "wear_name": {"type": "string"},
+        "wear_slot": {
+            "type": "string",
+            "enum": ["head", "face", "neck", "body", "other"],
+        },
+        "wear_svg": {"type": "string"},
     },
     "required": ["text", "emotion"],
 }
@@ -249,9 +290,12 @@ JSON_REMINDER = (
     "Return only a JSON object with no explanations or markdown. Fields: text "
     "(reply), emotion (one of the emotions), open_urls (array of links if the "
     "user explicitly asks to open something), search_query (Google query if "
-    "they ask to find something), remember_key/remember_value when needed, and "
+    "they ask to find something), remember_key/remember_value when needed, "
     "svg (valid SVG markup of exactly the requested subject if the user asked "
-    "you to draw something; do not reuse a previous scene)."
+    "you to draw something; do not reuse a previous scene), and wear_name/"
+    "wear_slot/wear_svg when the user asks you to wear or put on clothing. "
+    "wear_svg must be a transparent 200x200 overlay containing only the item, "
+    "not a drawing and not a face."
 )
 
 RETRY_PROMPT = (
@@ -261,7 +305,9 @@ RETRY_PROMPT = (
     "they asked to find something, fill search_query. If they asked you to "
     "draw something, fill svg with a detailed, valid SVG illustration of "
     "exactly the requested subject; include a background, gradients and "
-    "several shapes, and do not reuse a previous scene."
+    "several shapes, and do not reuse a previous scene. If they asked you to "
+    "wear or put on clothing, fill wear_name, wear_slot and wear_svg with a "
+    "transparent 200x200 overlay of only the item."
 )
 
 
@@ -336,6 +382,8 @@ def build_messages(text, history=None, memory=None):
         reference = subject_art(text)
         if reference:
             system += DRAWING_REFERENCE + reference + "\n"
+    if wants_clothing(text):
+        system += CLOTHING_REFERENCE
     messages = [{"role": "system", "content": system}]
     for item in (history or [])[-HISTORY_LIMIT:]:
         role = item.get("role")
@@ -863,6 +911,27 @@ def normalize_svg(value):
     return code or None
 
 
+WEAR_SLOTS = ("head", "face", "neck", "body", "other")
+
+
+def normalize_wear(arguments):
+    """Turn flat wear fields into one validated overlay item."""
+    svg = normalize_svg(arguments.get("wear_svg"))
+    if not svg:
+        return None
+    name = " ".join(str(arguments.get("wear_name") or "").split()).strip()
+    if len(name) > 60:
+        name = name[:57].rstrip() + "..."
+    slot = str(arguments.get("wear_slot") or "").strip().lower()
+    if slot not in WEAR_SLOTS:
+        slot = "other"
+    return {
+        "name": name or "clothing item",
+        "slot": slot,
+        "svg": svg,
+    }
+
+
 def parse_arguments(arguments):
     emotion = None
     reply = None
@@ -893,6 +962,7 @@ def parse_arguments(arguments):
         "open_urls": open_urls,
         "search_query": normalize_search_query(arguments.get("search_query")),
         "svg": normalize_svg(arguments.get("svg")),
+        "wear": normalize_wear(arguments),
     }
 
 
@@ -907,6 +977,7 @@ def parse_json_answer(content):
             "open_urls": [],
             "search_query": None,
             "svg": None,
+            "wear": None,
         }
     if not isinstance(data, dict):
         return {
@@ -916,6 +987,7 @@ def parse_json_answer(content):
             "open_urls": [],
             "search_query": None,
             "svg": None,
+            "wear": None,
         }
     return parse_arguments(data)
 
@@ -927,6 +999,7 @@ def parse_message(message):
     open_urls = []
     search_query = None
     svg = None
+    wear = None
     responded = False
 
     for call in message.get("tool_calls") or []:
@@ -952,6 +1025,7 @@ def parse_message(message):
                     open_urls.append(url)
             search_query = result["search_query"] or search_query
             svg = result["svg"] or svg
+            wear = result["wear"] or wear
         elif name == "remember":
             remember_fact(
                 memories,
@@ -977,6 +1051,7 @@ def parse_message(message):
         "open_urls": open_urls[:URL_LIMIT],
         "search_query": search_query,
         "svg": svg,
+        "wear": wear,
         "responded": responded,
     }
 
@@ -1003,6 +1078,7 @@ def chat(text, provider, history=None, memory=None):
         "open_urls": [],
         "search_query": None,
         "svg": None,
+        "wear": None,
         "responded": False,
     }
     last_message = {}
@@ -1026,6 +1102,7 @@ def chat(text, provider, history=None, memory=None):
                 "open_urls": fallback.get("open_urls") or [],
                 "search_query": fallback.get("search_query"),
                 "svg": fallback.get("svg"),
+                "wear": fallback.get("wear"),
             }
         result = parse_message(last_message)
         memories.update(result["memories"])
@@ -1055,6 +1132,7 @@ def chat(text, provider, history=None, memory=None):
             "open_urls": fallback.get("open_urls") or result["open_urls"],
             "search_query": fallback.get("search_query") or result["search_query"],
             "svg": fallback.get("svg") or result.get("svg"),
+            "wear": fallback.get("wear") or result.get("wear"),
         }
 
     return {
@@ -1066,4 +1144,5 @@ def chat(text, provider, history=None, memory=None):
         "open_urls": result.get("open_urls") or [],
         "search_query": result.get("search_query"),
         "svg": result.get("svg"),
+        "wear": result.get("wear"),
     }

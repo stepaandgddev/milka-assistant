@@ -1,11 +1,13 @@
 import copy
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QByteArray, QRectF, QSize, Qt, QUrl
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import (
     QNetworkAccessManager,
     QNetworkReply,
     QNetworkRequest,
 )
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,14 +15,18 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QRadioButton,
     QPushButton,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +36,7 @@ from autostart import (
     autostart_supported,
     set_autostart,
 )
+from outfit_store import SLOT_LABELS, load_outfit, save_outfit
 from settings_store import (
     PROVIDER_TYPES,
     default_tts,
@@ -47,6 +54,7 @@ class SettingsDialog(QDialog):
         self._settings = copy.deepcopy(settings)
         self._providers = self._settings["providers"]
         self._tts = self._settings.get("tts") or default_tts()
+        self._outfit = load_outfit()
         self._loading = False
         self._network = QNetworkAccessManager(self)
         self._health_reply = None
@@ -54,12 +62,24 @@ class SettingsDialog(QDialog):
         self._build_ui()
         self._refresh_list(self._active_row())
         self._load_tts()
+        self._refresh_outfit_list()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
 
+        tabs = QTabWidget()
+        root.addWidget(tabs)
+
+        general_scroll = QScrollArea()
+        general_scroll.setWidgetResizable(True)
+        general_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        general_page = QWidget()
+        general_root = QVBoxLayout(general_page)
+        general_scroll.setWidget(general_page)
+        tabs.addTab(general_scroll, "Model and voice")
+
         content = QHBoxLayout()
-        root.addLayout(content)
+        general_root.addLayout(content)
 
         left = QVBoxLayout()
         left.addWidget(QLabel("Endpoints"))
@@ -170,7 +190,45 @@ class SettingsDialog(QDialog):
         tts_form.addRow("", self.tts_test_button)
         tts_form.addRow(self.tts_status)
         tts_form.addRow(tts_hint)
-        root.addWidget(tts_group)
+        general_root.addWidget(tts_group)
+
+        outfit_tab = QWidget()
+        outfit_layout = QVBoxLayout(outfit_tab)
+        outfit_hint = QLabel(
+            "Clothing and accessories Milky is wearing. Items stay on her "
+            "between sessions until you remove them here.\n"
+            "Ask her, for example, «одень шапку» or «надень очки». "
+            "Changes apply when you click Save."
+        )
+        outfit_hint.setWordWrap(True)
+        outfit_hint.setStyleSheet("color: #777;")
+        outfit_layout.addWidget(outfit_hint)
+
+        self.outfit_list = QListWidget()
+        self.outfit_list.setIconSize(QSize(44, 44))
+        self.outfit_list.itemSelectionChanged.connect(
+            self._update_outfit_buttons
+        )
+        self.outfit_list.itemDoubleClicked.connect(
+            lambda _item: self._remove_outfit_item()
+        )
+        outfit_layout.addWidget(self.outfit_list, 1)
+
+        self.outfit_empty = QLabel("Milky is not wearing anything yet.")
+        self.outfit_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.outfit_empty.setStyleSheet("color: #888;")
+        outfit_layout.addWidget(self.outfit_empty)
+
+        outfit_buttons = QHBoxLayout()
+        self.outfit_remove_button = QPushButton("Remove selected")
+        self.outfit_remove_button.clicked.connect(self._remove_outfit_item)
+        self.outfit_clear_button = QPushButton("Remove all")
+        self.outfit_clear_button.clicked.connect(self._clear_outfit)
+        outfit_buttons.addWidget(self.outfit_remove_button)
+        outfit_buttons.addWidget(self.outfit_clear_button)
+        outfit_buttons.addStretch()
+        outfit_layout.addLayout(outfit_buttons)
+        tabs.addTab(outfit_tab, "Outfit")
 
         # Connect UI elements
         self.name_edit.textChanged.connect(self._store_current)
@@ -296,6 +354,67 @@ class SettingsDialog(QDialog):
         ):
             widget.setEnabled(enabled and provider == "groq")
         self.tts_test_button.setEnabled(enabled and provider == "milka")
+
+    def _outfit_icon(self, svg):
+        side = 44
+        pixmap = QPixmap(side * 2, side * 2)
+        pixmap.setDevicePixelRatio(2.0)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        renderer = QSvgRenderer(QByteArray(str(svg).encode("utf-8")))
+        if renderer.isValid():
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            renderer.render(painter, QRectF(0, 0, side, side))
+            painter.end()
+        return QIcon(pixmap)
+
+    def _refresh_outfit_list(self):
+        self.outfit_list.clear()
+        for item in self._outfit:
+            slot = SLOT_LABELS.get(item["slot"], "Other")
+            entry = QListWidgetItem(
+                self._outfit_icon(item["svg"]),
+                f"{item['name']}  ·  {slot}",
+            )
+            entry.setData(Qt.ItemDataRole.UserRole, item["id"])
+            entry.setToolTip(f"{item['name']} ({slot})")
+            self.outfit_list.addItem(entry)
+        has_items = bool(self._outfit)
+        self.outfit_list.setVisible(has_items)
+        self.outfit_empty.setVisible(not has_items)
+        self._update_outfit_buttons()
+
+    def _update_outfit_buttons(self):
+        has_items = bool(self._outfit)
+        row = self.outfit_list.currentRow()
+        self.outfit_remove_button.setEnabled(
+            has_items and 0 <= row < len(self._outfit)
+        )
+        self.outfit_clear_button.setEnabled(has_items)
+
+    def _remove_outfit_item(self):
+        row = self.outfit_list.currentRow()
+        if not (0 <= row < len(self._outfit)):
+            return
+        del self._outfit[row]
+        self._refresh_outfit_list()
+        if self._outfit:
+            self.outfit_list.setCurrentRow(min(row, len(self._outfit) - 1))
+
+    def _clear_outfit(self):
+        if not self._outfit:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Remove all clothing",
+            "Remove everything Milky is wearing?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._outfit = []
+        self._refresh_outfit_list()
 
     def _test_milka_tts(self):
         self._store_tts()
@@ -467,5 +586,14 @@ class SettingsDialog(QDialog):
             return
         self._settings["autostart"] = autostart
         self._settings["providers"] = self._providers
+        try:
+            self._outfit = save_outfit(self._outfit)
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Outfit",
+                f"Could not save Milky's outfit:\n{error}",
+            )
+            return
         save_settings(self._settings)
         super().accept()

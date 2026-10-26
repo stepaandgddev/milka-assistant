@@ -226,6 +226,8 @@ avatar.png
 memory.json
 history.json
 settings.json
+outfit.json
+outfit.json.tmp
 svg_drawings/
 .DS_Store
 Thumbs.db

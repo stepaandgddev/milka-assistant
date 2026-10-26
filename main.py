@@ -67,6 +67,9 @@ from ai_client import (
     save_history,
     save_memory,
 )
+from clothing_art import fallback_clothing, wants_clothing
+from clothing_overlay import AvatarLabel, clothing_fits, validate_clothing_svg
+from outfit_store import infer_slot, load_outfit, save_outfit, wear_item
 from runtime import data_path, resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
@@ -185,11 +188,13 @@ class MainWindow(QMainWindow):
         self.bubble.hide()
         layout.addWidget(self.bubble)
 
-        self.gif_label = QLabel(self)
-        self.gif_label.setStyleSheet("background: transparent;")
+        self.gif_label = AvatarLabel(self)
         self.gif_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.gif_label.setFixedSize(GIF_SIZE, GIF_SIZE)
         layout.addWidget(self.gif_label)
+
+        self._outfit = load_outfit()
+        self.gif_label.set_outfit(self._outfit)
 
         self.movie = QMovie(asset_path("gifs/milka_idle.gif"))
         self.movie.setScaledSize(QSize(GIF_SIZE, GIF_SIZE))
@@ -341,8 +346,10 @@ class MainWindow(QMainWindow):
         self._reply_gif = EMOTIONS.get(emotion, EMOTIONS["speaking"])
         self.set_gif(self._reply_gif)
 
-        # Save drawings to the gallery instead of replacing Milky's face.
+        # Wear generated clothing over the face, then save any drawing to the
+        # gallery instead of replacing Milky's face.
         request = self._last_user_text or ""
+        wear_applied = self._apply_wear(result.get("wear"), request)
         svg_code = result.get("svg")
         if svg_code and not self._svg_is_valid(svg_code):
             svg_code = None
@@ -358,6 +365,11 @@ class MainWindow(QMainWindow):
             svg_code = draw_for(request)
         elif not svg_code and asked_to_draw(request):
             svg_code = draw_for(request)
+        if (wear_applied or wants_clothing(request)) and not asked_to_draw(
+            request
+        ):
+            # Clothing overlays are not gallery drawings.
+            svg_code = None
         if svg_code and self._save_drawing(svg_code):
             self._play_drawing_animation()
             self._show_drawing_toast()
@@ -393,6 +405,8 @@ class MainWindow(QMainWindow):
         if worker is not self._worker or self.input.isVisible():
             return
         self._drawing_timer.stop()
+        # A provider failure should not leave a simple clothing request empty.
+        self._apply_wear(None, self._last_user_text or "")
         message = " ".join(error.split())
         if len(message) > 180:
             message = message[:177] + "..."
@@ -469,6 +483,57 @@ class MainWindow(QMainWindow):
     def _svg_is_valid(self, svg_code):
         renderer = QSvgRenderer(QByteArray(svg_code.encode("utf-8")))
         return renderer.isValid()
+
+    def _fallback_clothing(self, request):
+        if not request or asked_to_draw(request):
+            return None
+        return fallback_clothing(request)
+
+    def _apply_wear(self, wear, request):
+        """Validate, persist, and display one generated clothing item."""
+        svg = None
+        name = ""
+        slot = ""
+        if isinstance(wear, dict):
+            svg = validate_clothing_svg(wear.get("svg"))
+            name = str(wear.get("name") or "").strip()
+            slot = str(wear.get("slot") or "").strip()
+            if svg:
+                slot = infer_slot(name, slot)
+                if not clothing_fits(slot, svg, name):
+                    fallback = self._fallback_clothing(request)
+                    if fallback is not None:
+                        name, slot, svg = fallback
+                        svg = validate_clothing_svg(svg)
+                        if not svg:
+                            return False
+        if not svg:
+            fallback = self._fallback_clothing(request)
+            if fallback is None:
+                return False
+            name, slot, svg = fallback
+            svg = validate_clothing_svg(svg)
+            if not svg:
+                return False
+
+        items, item = wear_item(self._outfit, name, slot, svg)
+        if item is None:
+            fallback = self._fallback_clothing(request)
+            if fallback is None:
+                return False
+            name, slot, svg = fallback
+            items, item = wear_item(self._outfit, name, slot, svg)
+            if item is None:
+                return False
+
+        try:
+            self._outfit = save_outfit(items)
+        except OSError as error:
+            print(f"Outfit save error: {error}")
+            # Show the item now even if the disk write failed.
+            self._outfit = items
+        self.gif_label.set_outfit(self._outfit)
+        return True
 
     def _save_drawing(self, svg_code):
         """Write a new drawing to the gallery folder."""
@@ -807,6 +872,8 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
         self._tts_settings = self._settings.get("tts") or {}
+        self._outfit = load_outfit()
+        self.gif_label.set_outfit(self._outfit)
         if self._tray is not None:
             self._tray.setToolTip(self.tray_tooltip())
         self.show_status(f"Active endpoint: {self._provider.get('name', 'AI')}")

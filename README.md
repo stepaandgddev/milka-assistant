@@ -17,6 +17,7 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 - Opening links when the user explicitly asks.
 - Detailed SVG drawings: when asked to draw something, Milky saves a polished SVG illustration to `svg_drawings/`, plays a drawing animation, and shows a notification above her face. Recognized subjects get a matching reference illustration in the prompt so the model keeps the requested subject, anatomy, and level of detail.
 - Official self-portrait: plain selfie requests use her line-art portrait; scene requests such as **нарисуй себя в космосе** draw the full scene.
+- AI-generated clothing and accessories: ask her to put on a hat, glasses, scarf, crown or other item and she generates a transparent SVG overlay over her animated face. The outfit persists across restarts and can be managed in **Settings → Outfit**.
 - SVG drawing gallery from the tray menu, with sharp click-to-enlarge previews and a Delete button for each drawing.
 - Text-to-speech replies through a Milka TTS server or Groq, with configurable endpoint and voice.
 - System tray icon and context menu.
@@ -99,7 +100,7 @@ To build it:
 
 The workflow also runs on every push to `master` and publishes `Milky-Windows.zip` as a GitHub Release when a `v*` tag is pushed.
 
-The built app is portable: extract the archive to a writable folder and run `Milky.exe`. Place `.env` and the generated `settings.json`, `memory.json`, and `history.json` next to the executable. The executable is unsigned, so Windows SmartScreen may show a warning.
+The built app is portable: extract the archive to a writable folder and run `Milky.exe`. Place `.env` and the generated `settings.json`, `memory.json`, `history.json`, and `outfit.json` next to the executable. The executable is unsigned, so Windows SmartScreen may show a warning.
 
 ## Manual Installation
 
@@ -177,6 +178,8 @@ Ask Milky to **draw a cat**, **draw a sun**, **нарисуй котика** or 
 
 Ask **нарисуй себя**, **селфи**, **автопортрет** or **draw yourself** and she will use her official line-art self-portrait. If you ask for a scene with her, such as **нарисуй себя в космосе** or **draw yourself with a cat**, she draws the full scene instead of only the portrait.
 
+Ask **одень шапку**, **надень очки**, **put on a scarf** or **wear a crown** and Milky generates a transparent clothing overlay that sits on top of her animated face. She can wear several items at once in different layers (for example, a hat, glasses and a scarf). The outfit is saved in `outfit.json` and is restored every time the app starts. Open **Settings → Outfit** to remove an individual item or click **Remove all**. Outfit changes are written when you click **Save**.
+
 ## Autostart
 
 Autostart is controlled by the **Launch Milky at login** checkbox in the app settings.
@@ -204,6 +207,7 @@ When installing with `install.sh` or `install.ps1`, autostart can be enabled imm
 | `SETTINGS_FILE` | Path to the settings file | `settings.json` |
 | `MEMORY_FILE` | Path to the memory file | `memory.json` |
 | `HISTORY_FILE` | Path to the history file | `history.json` |
+| `OUTFIT_FILE` | Path to the saved outfit | `outfit.json` |
 | `TTS_ENABLED` | Enable spoken replies | `true` |
 | `TTS_PROVIDER` | TTS backend (`milka` or `groq`) | `milka` |
 | `MILKY_TTS_URL` | Milka TTS server address | `http://192.168.1.100:8765` |
@@ -218,8 +222,11 @@ When installing with `install.sh` or `install.ps1`, autostart can be enabled imm
 milky/
 ├── main.py                 # window, animations, tray, and app startup
 ├── ai_client.py            # model requests, memory, and history
-├── settings_dialog.py      # endpoint settings window
+├── settings_dialog.py      # endpoint, voice, and outfit settings window
 ├── settings_store.py       # loading and saving settings.json
+├── outfit_store.py         # loading and saving outfit.json
+├── clothing_art.py         # clothing prompt guide and fallback overlays
+├── clothing_overlay.py     # clothing validation and face overlay rendering
 ├── autostart.py            # system autostart management
 ├── runtime.py              # source/frozen resource and data paths
 ├── tts.py                  # Milka/Groq speech synthesis and playback
@@ -242,6 +249,7 @@ milky/
 
 - Built-in web search is not connected to the interface yet. `web_search.py` remains an experimental module.
 - Drawing quality depends on the selected model. Recognized subjects get a detailed reference, and a self-portrait scene is rejected when the user asked for another subject. If the model still returns no usable SVG, Milky falls back to her own detailed illustrations.
+- Clothing quality depends on the selected model. Common accessories (hat, crown, glasses, mask, scarf, necklace, bow and earrings) have built-in fallbacks, and an overlay with a background or face is rejected before it is worn.
 - TTS needs a running Milka TTS server or a valid Groq API key.
 - Cloud providers require a working API key and internet access.
 - Response speed depends on the selected model and hardware. Local models on a weak CPU may answer slowly.
@@ -249,7 +257,7 @@ milky/
 ## Pre-Commit Checks
 
 ```bash
-python -m py_compile ai_client.py autostart.py main.py runtime.py settings_dialog.py settings_store.py svg_art.py tts.py web_search.py
+python -m py_compile ai_client.py autostart.py clothing_art.py clothing_overlay.py main.py outfit_store.py runtime.py settings_dialog.py settings_store.py svg_art.py tts.py web_search.py
 bash -n install.sh
 ```
 

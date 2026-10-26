@@ -133,6 +133,9 @@ $requiredFiles = @(
     'runtime.py',
     'tts.py',
     'svg_art.py',
+    'clothing_art.py',
+    'clothing_overlay.py',
+    'outfit_store.py',
     'requirements.txt',
     'milka_idle.svg'
 )
@@ -161,6 +164,9 @@ $files = @(
     'runtime.py',
     'tts.py',
     'svg_art.py',
+    'clothing_art.py',
+    'clothing_overlay.py',
+    'outfit_store.py',
     'web_search.py',
     'milka_idle.svg',
     'requirements.txt',

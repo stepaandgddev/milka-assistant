@@ -32,7 +32,7 @@ jobs:
 
       - name: Verify sources
         run: |
-          python -m py_compile ai_client.py autostart.py main.py runtime.py settings_dialog.py settings_store.py web_search.py
+          python -m py_compile ai_client.py autostart.py clothing_art.py clothing_overlay.py main.py outfit_store.py runtime.py settings_dialog.py settings_store.py web_search.py
 
       - name: Build executable
         shell: pwsh
