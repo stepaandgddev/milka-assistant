@@ -58,6 +58,7 @@ from PySide6.QtSvgWidgets import QSvgWidget
 
 from ai_client import (
     EMOTIONS,
+    SELFIE_SIGNATURE,
     chat,
     fit_selfie_group,
     fix_selfie_fill,
@@ -69,7 +70,14 @@ from ai_client import (
 from runtime import data_path, resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
-from svg_art import asked_to_draw, draw_for, is_plain_selfie, wants_selfie
+from svg_art import (
+    asked_to_draw,
+    draw_for,
+    includes_milky,
+    is_plain_selfie,
+    subject_for,
+    wants_selfie,
+)
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
@@ -337,6 +345,14 @@ class MainWindow(QMainWindow):
         request = self._last_user_text or ""
         svg_code = result.get("svg")
         if svg_code and not self._svg_is_valid(svg_code):
+            svg_code = None
+        if (
+            svg_code
+            and not wants_selfie(request)
+            and not includes_milky(request)
+            and subject_for(request) not in (None, "selfie")
+            and SELFIE_SIGNATURE in svg_code
+        ):
             svg_code = None
         if wants_selfie(request) and is_plain_selfie(request):
             svg_code = draw_for(request)

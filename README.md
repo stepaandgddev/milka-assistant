@@ -15,7 +15,7 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 - Provider and model switching in the settings window.
 - Request caching for OpenRouter.
 - Opening links when the user explicitly asks.
-- Detailed SVG drawings: when asked to draw something, Milky saves a polished SVG illustration to `svg_drawings/`, plays a drawing animation, and shows a notification above her face.
+- Detailed SVG drawings: when asked to draw something, Milky saves a polished SVG illustration to `svg_drawings/`, plays a drawing animation, and shows a notification above her face. Recognized subjects get a matching reference illustration in the prompt so the model keeps the requested subject, anatomy, and level of detail.
 - Official self-portrait: plain selfie requests use her line-art portrait; scene requests such as **нарисуй себя в космосе** draw the full scene.
 - SVG drawing gallery from the tray menu, with sharp click-to-enlarge previews and a Delete button for each drawing.
 - Text-to-speech replies through a Milka TTS server or Groq, with configurable endpoint and voice.
@@ -241,7 +241,7 @@ milky/
 ## Limitations
 
 - Built-in web search is not connected to the interface yet. `web_search.py` remains an experimental module.
-- Drawing quality depends on the selected model. If the model does not return SVG, Milky falls back to her own detailed illustrations.
+- Drawing quality depends on the selected model. Recognized subjects get a detailed reference, and a self-portrait scene is rejected when the user asked for another subject. If the model still returns no usable SVG, Milky falls back to her own detailed illustrations.
 - TTS needs a running Milka TTS server or a valid Groq API key.
 - Cloud providers require a working API key and internet access.
 - Response speed depends on the selected model and hardware. Local models on a weak CPU may answer slowly.

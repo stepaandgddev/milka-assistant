@@ -968,7 +968,8 @@ SELFIE_SPACE = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="6
 _SPACE_PATTERN = (
     r"\bкосм(?:ос|оса|осу|осом|осе)\b|\bкосмическ\w*|"
     r"\b(?:space|galaxy|cosmos|universe)\w*\b|"
-    r"\bпланет\w*|\b(?:planet|planets)\b"
+    r"\bпланет\w*|\b(?:planet|planets)\b|"
+    r"\bгалактик\w*|\bmilky\s+way\b|\bмлечн\w*\s+путь\b"
 )
 _SPACE_RE = re.compile(_SPACE_PATTERN, re.IGNORECASE)
 
@@ -1006,16 +1007,21 @@ _DRAW_RE = re.compile(
 )
 
 _SELFIE_RE = re.compile(
-    r"\b(?:нарису\w*|нарисова\w*|изобраз\w*)\s+(?:мне\s+)?(?:себя|милк\w*)\b"
-    r"|\bпортрет\s+(?:себя|милк\w*)\b"
+    r"\b(?:нарису\w*|нарисова\w*|изобраз\w*)\s+(?:мне\s+)?"
+    r"(?:себя|милк(?:а|у|е|ой|и)?)\b"
+    r"|\bпортрет\s+(?:себя|милк(?:а|у|е|ой|и)?)\b"
     r"|\b(?:мой|свой)\s+портрет\b"
     r"|\b(?:селфи|селфик|автопортрет)\w*\b"
     r"|\b(?:показ\w*|покажи\w*|показать)\s+себя\b"
     r"|\b(?:draw|paint|sketch|illustrate)\s+(?:a\s+)?"
-    r"(?:yourself|milky|selfie)\b"
+    r"(?:yourself|milky(?!['’]s\b|\s+way\b)|selfie)\b"
+    r"|\b(?:draw|paint|sketch|illustrate)\s+milky['’]s\s+"
+    r"(?:portrait|selfie|self[\s-]?portrait)\b"
     r"|\b(?:draw|paint|sketch|illustrate)\s+(?:a\s+)?"
-    r"(?:picture|image|drawing|portrait)\s+of\s+(?:yourself|milky)\b"
-    r"|\b(?:picture|image|drawing|portrait)\s+of\s+(?:yourself|milky)\b"
+    r"(?:picture|image|drawing|portrait)\s+of\s+"
+    r"(?:yourself|milky(?!['’]s\b|\s+way\b))\b"
+    r"|\b(?:picture|image|drawing|portrait)\s+of\s+"
+    r"(?:yourself|milky(?!['’]s\b|\s+way\b))\b"
     r"|\bselfie\w*\b|\bself[\s-]?portrait\w*\b",
     re.IGNORECASE,
 )
@@ -1029,6 +1035,18 @@ def asked_to_draw(text):
 def wants_selfie(text):
     """Return True when the user asks Milky to draw herself."""
     return bool(text) and _SELFIE_RE.search(text) is not None
+
+
+_INCLUDES_MILKY_RE = re.compile(
+    r"\b(?:с|со|и)\s+милк(?:а|у|е|ой|ою|и)?\b"
+    r"|\b(?:with|and)\s+milky\b(?!['’]s\b|\s+way\b)",
+    re.IGNORECASE,
+)
+
+
+def includes_milky(text):
+    """Return True when Milky is explicitly included with another subject."""
+    return bool(text) and _INCLUDES_MILKY_RE.search(text) is not None
 
 
 _SELFIE_FILLER_RE = re.compile(
@@ -1065,6 +1083,16 @@ def subject_for(text):
     for name, pattern, _svg in _SUBJECT_PATTERNS:
         if pattern.search(text):
             return name
+    return None
+
+
+def subject_art(text):
+    """Return detailed art for a non-selfie subject mentioned in the request."""
+    if not text:
+        return None
+    for _name, pattern, svg in _SUBJECT_PATTERNS:
+        if pattern.search(text):
+            return svg
     return None
 
 

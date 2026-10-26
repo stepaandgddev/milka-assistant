@@ -8,7 +8,14 @@ import requests
 from dotenv import load_dotenv
 
 from runtime import data_path
-from svg_art import SELFIE_PATHS, is_plain_selfie, wants_selfie
+from svg_art import (
+    SELFIE_PATHS,
+    asked_to_draw,
+    includes_milky,
+    is_plain_selfie,
+    subject_art,
+    wants_selfie,
+)
 
 load_dotenv(data_path(".env"))
 
@@ -121,10 +128,14 @@ Links and search:
 
 Drawing (SVG):
 - If the user asks you to draw, create an image, make a picture, or draw something, fill the svg field with valid SVG markup.
+- Draw exactly the subject in the current request. Do not reuse a subject, background, character or composition from an earlier drawing unless the user explicitly asks for it. Do not draw your own face unless the user asks for you, a selfie or your portrait.
+- When the user asks for "her cat", "её котик" or "my cat", the cat is the subject: draw the cat itself, not Milky.
 - Make every drawing detailed and polished: a soft background, gradients, shading, highlights and several shapes so it looks like a real illustration.
 - Use a viewBox like "0 0 200 200" (or larger if the scene needs room) and bright friendly colors.
 - Use <defs> for gradients, semi-transparent ellipses for soft shadows, rounded lines, and small details such as eye highlights, blush or texture.
+- Make the subject complete and recognizable. A cat needs its head, ears, eyes, nose, mouth, whiskers, paws, tail and fur shading; a person needs a face, hair and body; an object needs its characteristic parts. Never return just a few bare rectangles.
 - Keep the markup reasonably compact, but never return just a few bare outlines.
+- If a reference drawing for the requested subject is included below, use it as a quality guide. Match its level of detail and adapt its pose, colors and background to the request.
 - You have an official self-portrait: white line art of your cat-like face on a warm portrait background. If the user asks for a plain selfie or portrait ("нарисуй себя", "селфи", "draw yourself"), leave svg empty and say in text that you are showing your portrait — the app attaches the official artwork automatically.
 - If the user asks for a scene with you (for example "нарисуй себя в космосе", "draw yourself with a cat"), draw the full scene and reuse the official face paths from the reference message at a suitable scale and position. Add the requested background and objects; do not return only your face. Adapt the face stroke color to the scene (white on dark backgrounds, dark on light ones) so it stays visible.
 - Do not invent a different self-portrait. For every other subject, generate your own original SVG code.
@@ -146,6 +157,17 @@ SELFIE_REFERENCE = (
     "place them to fit the scene, and add the requested background and "
     "objects around her. Keep the whole face, including both eyes and the "
     "smile, inside the viewBox with a margin. Do not return only the face.\n"
+)
+
+DRAWING_REFERENCE = (
+    "\nDrawing reference — a finished example of the quality and structure "
+    "expected for the requested subject. Match its level of detail, not a "
+    "simplified version: keep the gradients, soft shading, highlights, "
+    "anatomy and small details, and adapt the pose, colors and background to "
+    "the user's request. If the user also asked for Milky, combine the "
+    "subject with her face reference; otherwise do not replace the subject "
+    "with Milky, a self-portrait, or a scene from earlier in the "
+    "conversation.\n"
 )
 
 TOOLS = [
@@ -192,10 +214,11 @@ TOOLS = [
                     "svg": {
                         "type": "string",
                         "description": (
-                            "Optional. Detailed, valid SVG markup to draw something "
-                            "for the user: background, gradients, shading and small "
-                            "details. Use this when the user asks you to draw, create "
-                            "an image, or make a picture."
+                            "Optional. Detailed, valid SVG illustration of exactly "
+                            "the subject the user requested, with a background, "
+                            "gradients, shading and small details. Do not reuse a "
+                            "previous scene or draw Milky unless the user explicitly "
+                            "asks for her."
                         ),
                     },
                 },
@@ -227,7 +250,8 @@ JSON_REMINDER = (
     "(reply), emotion (one of the emotions), open_urls (array of links if the "
     "user explicitly asks to open something), search_query (Google query if "
     "they ask to find something), remember_key/remember_value when needed, and "
-    "svg (valid SVG markup if the user asked you to draw something)."
+    "svg (valid SVG markup of exactly the requested subject if the user asked "
+    "you to draw something; do not reuse a previous scene)."
 )
 
 RETRY_PROMPT = (
@@ -235,8 +259,9 @@ RETRY_PROMPT = (
     "emotion. If the user shared a fact about themselves, fill remember_key "
     "and remember_value. If the user asked to open a link, fill open_urls. If "
     "they asked to find something, fill search_query. If they asked you to "
-    "draw something, fill svg with detailed, valid SVG markup that includes a "
-    "background, gradients and several shapes."
+    "draw something, fill svg with a detailed, valid SVG illustration of "
+    "exactly the requested subject; include a background, gradients and "
+    "several shapes, and do not reuse a previous scene."
 )
 
 
@@ -305,8 +330,12 @@ def clean_reply(text):
 
 def build_messages(text, history=None, memory=None):
     system = SYSTEM_PROMPT + memory_block(memory)
-    if wants_selfie(text) and not is_plain_selfie(text):
+    if (wants_selfie(text) and not is_plain_selfie(text)) or includes_milky(text):
         system += SELFIE_REFERENCE
+    if asked_to_draw(text):
+        reference = subject_art(text)
+        if reference:
+            system += DRAWING_REFERENCE + reference + "\n"
     messages = [{"role": "system", "content": system}]
     for item in (history or [])[-HISTORY_LIMIT:]:
         role = item.get("role")
