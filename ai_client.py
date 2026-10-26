@@ -111,6 +111,12 @@ SCREEN_QUESTION_RE = re.compile(
     r"(?:\bчто\s+(?:ты\s+)?(?:видишь|видно)\b|"
     r"\bты\s+видишь\b|"
     r"\bвидишь\s*,?\s*что\s+происходит\b|"
+    r"\b(?:какой|какая|что\s+за)\s+(?:трек|песня|музыка)\s+"
+    r"(?:сейчас\s+)?(?:играет|звучит)\b|"
+    r"\bчто\s+сейчас\s+играет\b|"
+    r"\bwhat\s+(?:song|track|music)\s+is\s+"
+    r"(?:playing|this)\b|"
+    r"\bwhat(?:'s|\s+is)\s+playing\b|"
     r"\bwhat\s+(?:do\s+)?you\s+see\b|"
     r"\bwhat\s+can\s+you\s+see\b|"
     r"\bcan\s+you\s+see\b)",
