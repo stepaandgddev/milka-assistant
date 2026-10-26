@@ -14,6 +14,7 @@ if (
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QLabel,
     QLineEdit,
@@ -40,7 +41,10 @@ from PySide6.QtGui import (
 from PySide6.QtCore import (
     Qt,
     QByteArray,
+    QEasingCurve,
     QPoint,
+    QPropertyAnimation,
+    QRectF,
     QSize,
     QUrl,
     QEvent,
@@ -166,12 +170,6 @@ class MainWindow(QMainWindow):
         self.movie.start()
         self._current_gif = "milka_idle.gif"
 
-        # SVG drawing widget (hidden by default)
-        self.svg_widget = QSvgWidget(self)
-        self.svg_widget.setFixedSize(GIF_SIZE, GIF_SIZE)
-        self.svg_widget.hide()
-        layout.addWidget(self.svg_widget)
-
         # SVG drawings directory
         SVG_DIR.mkdir(parents=True, exist_ok=True)
         self._svg_counter = len(list(SVG_DIR.glob("*.svg")))
@@ -190,15 +188,24 @@ class MainWindow(QMainWindow):
         self._tts_worker = None
         self._selfie_window = None
         self._svg_gallery = None
+        self._svg_gallery_placed = False
+        self._svg_grid = None
+        self._svg_preview = None
         self._last_user_text = None
+        self._reply_gif = "milka_idle.gif"
+        self._toast = None
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
         self._bubble_timer.timeout.connect(self.hide_reply)
 
-        self._svg_timer = QTimer(self)
-        self._svg_timer.setSingleShot(True)
-        self._svg_timer.timeout.connect(self._hide_svg)
+        self._drawing_timer = QTimer(self)
+        self._drawing_timer.setSingleShot(True)
+        self._drawing_timer.timeout.connect(self._finish_drawing_animation)
+
+        self._toast_timer = QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.timeout.connect(self._hide_drawing_toast)
 
         self.setup_tray()
 
@@ -303,16 +310,19 @@ class MainWindow(QMainWindow):
             if parsed.scheme().lower() in ("http", "https") and parsed.host():
                 QDesktopServices.openUrl(parsed)
 
-        self.set_gif(EMOTIONS.get(emotion, EMOTIONS["speaking"]))
+        self._drawing_timer.stop()
+        self._reply_gif = EMOTIONS.get(emotion, EMOTIONS["speaking"])
+        self.set_gif(self._reply_gif)
 
-        # Handle SVG drawing
+        # Save drawings to the gallery instead of replacing Milky's face.
         svg_code = result.get("svg")
         if svg_code and not self._svg_is_valid(svg_code):
             svg_code = None
-        if svg_code:
-            self._show_svg(svg_code)
-        elif asked_to_draw(self._last_user_text or ""):
-            self._show_svg(draw_for(self._last_user_text or ""))
+        if not svg_code and asked_to_draw(self._last_user_text or ""):
+            svg_code = draw_for(self._last_user_text or "")
+        if svg_code and self._save_drawing(svg_code):
+            self._play_drawing_animation()
+            self._show_drawing_toast()
 
         if not text:
             self._bubble_timer.start(1500)
@@ -344,6 +354,7 @@ class MainWindow(QMainWindow):
     def show_error(self, worker, error):
         if worker is not self._worker or self.input.isVisible():
             return
+        self._drawing_timer.stop()
         message = " ".join(error.split())
         if len(message) > 180:
             message = message[:177] + "..."
@@ -355,7 +366,8 @@ class MainWindow(QMainWindow):
 
     def hide_reply(self):
         self.set_widget_visible(self.bubble, False)
-        self.set_gif("milka_idle.gif")
+        if self._current_gif != "milka_drawing.gif":
+            self.set_gif("milka_idle.gif")
 
     def show_selfie(self):
         """Show Milky's selfie (milka_idle.svg) in a small overlay window."""
@@ -453,45 +465,203 @@ class MainWindow(QMainWindow):
         renderer = QSvgRenderer(QByteArray(svg_code.encode("utf-8")))
         return renderer.isValid()
 
-    def _show_svg(self, svg_code):
-        """Display an SVG drawing in the main window."""
-        self.gif_label.hide()
-        self.svg_widget.show()
-        self.svg_widget.load(bytearray(svg_code, encoding="utf-8"))
-        # Save the drawing
-        self._svg_counter += 1
-        svg_file = SVG_DIR / f"milky_draw_{self._svg_counter}.svg"
+    def _save_drawing(self, svg_code):
+        """Write a new drawing to the gallery folder."""
+        SVG_DIR.mkdir(parents=True, exist_ok=True)
+        index = self._svg_counter + 1
+        path = SVG_DIR / f"milky_draw_{index}.svg"
+        while path.exists():
+            index += 1
+            path = SVG_DIR / f"milky_draw_{index}.svg"
         try:
-            svg_file.write_text(svg_code, encoding="utf-8")
+            path.write_text(svg_code, encoding="utf-8")
         except OSError:
-            pass
-        # Auto-hide SVG after 12 seconds and return to gif
-        self._svg_timer.start(12000)
+            return None
+        self._svg_counter = index
+        self._refresh_svg_gallery()
+        return path
 
-    def _hide_svg(self):
-        self._svg_timer.stop()
-        self.svg_widget.hide()
-        self.gif_label.show()
+    def _play_drawing_animation(self):
+        """Play the drawing GIF while the new artwork is announced."""
+        if self._current_gif == "milka_drawing.gif":
+            self.movie.stop()
+            self.movie.start()
+        else:
+            self.set_gif("milka_drawing.gif")
+        self._drawing_timer.start(6000)
+
+    def _finish_drawing_animation(self):
+        target = self._reply_gif if self.bubble.isVisible() else "milka_idle.gif"
+        if target == "milka_drawing.gif":
+            target = "milka_idle.gif"
+        self.set_gif(target)
+
+    def _show_drawing_toast(self):
+        """Show an animated notification above Milky's face."""
+        self._hide_drawing_toast(immediate=True)
+
+        toast = QWidget(
+            None,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
+        toast.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        toast.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+
+        outer = QVBoxLayout(toast)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        button = QPushButton("Новый рисунок в галерее!")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(32, 28, 44, 238);"
+            "  color: white;"
+            "  border: 1px solid rgba(255, 255, 255, 90);"
+            "  border-left: 4px solid #ff7ab8;"
+            "  border-radius: 11px;"
+            "  padding: 9px 14px 9px 11px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(66, 52, 92, 245);"
+            "}"
+        )
+        button.clicked.connect(self._open_gallery_from_toast)
+        outer.addWidget(button)
+
+        effect = QGraphicsOpacityEffect(button)
+        effect.setOpacity(0.0)
+        button.setGraphicsEffect(effect)
+        toast._fade_effect = effect
+
+        toast.adjustSize()
+        position = self._toast_position(toast)
+        toast.move(position.x(), position.y() + 14)
+
+        fade = QPropertyAnimation(effect, b"opacity", toast)
+        fade.setDuration(220)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+        slide = QPropertyAnimation(toast, b"pos", toast)
+        slide.setDuration(280)
+        slide.setStartValue(QPoint(position.x(), position.y() + 14))
+        slide.setEndValue(position)
+        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        slide.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+        toast.show()
+        toast.raise_()
+        self._toast = toast
+        self._toast_timer.start(4600)
+
+    def _toast_position(self, toast):
+        geometry = self.frameGeometry()
+        x = geometry.center().x() - toast.width() // 2
+        y = geometry.top() - toast.height() - 10
+        screen = QGuiApplication.screenAt(geometry.center())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            x = max(area.left() + 6, min(x, area.right() - toast.width() - 6))
+            if y < area.top() + 6:
+                y = geometry.bottom() + 10
+        return QPoint(x, y)
+
+    def _hide_drawing_toast(self, immediate=False):
+        self._toast_timer.stop()
+        toast = self._toast
+        if toast is None:
+            return
+        self._toast = None
+        effect = getattr(toast, "_fade_effect", None)
+        if immediate or effect is None:
+            toast.close()
+            toast.deleteLater()
+            return
+        fade = QPropertyAnimation(effect, b"opacity", toast)
+        fade.setDuration(260)
+        fade.setStartValue(effect.opacity())
+        fade.setEndValue(0.0)
+        fade.setEasingCurve(QEasingCurve.Type.InCubic)
+        fade.finished.connect(toast.close)
+        fade.finished.connect(toast.deleteLater)
+        fade.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _open_gallery_from_toast(self):
+        self._hide_drawing_toast(immediate=True)
+        self.show_svg_gallery()
 
     def show_svg_gallery(self):
-        """Open a scrollable gallery with previews of every drawing."""
-        if self._svg_gallery is not None:
-            self._svg_gallery.close()
-            self._svg_gallery = None
+        """Open a scrollable gallery with sharp previews of every drawing."""
+        if self._svg_gallery is None:
+            self._build_svg_gallery()
+        if not self._svg_gallery_placed:
+            self._center_on_screen(self._svg_gallery)
+            self._svg_gallery_placed = True
+        self._populate_svg_gallery()
+        self._svg_gallery.show()
+        self._svg_gallery.raise_()
+        self._svg_gallery.activateWindow()
 
+    def _center_on_screen(self, window):
+        screen = QGuiApplication.screenAt(self.frameGeometry().center())
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        x = area.center().x() - window.width() // 2
+        y = area.center().y() - window.height() // 2
+        window.move(x, y)
+
+    def _build_svg_gallery(self):
         gallery = QWidget(
             self,
             Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint,
         )
         gallery.setWindowTitle("Milky's SVG Drawings")
-        gallery.resize(560, 480)
+        gallery.resize(680, 560)
+
         outer = QVBoxLayout(gallery)
+        hint = QLabel("Click a drawing to view it larger.")
+        hint.setStyleSheet("color: #666;")
+        outer.addWidget(hint)
 
         scroll = QScrollArea(gallery)
         scroll.setWidgetResizable(True)
         host = QWidget()
         grid = QGridLayout(host)
-        grid.setSpacing(10)
+        grid.setSpacing(12)
+        grid.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        scroll.setWidget(host)
+        outer.addWidget(scroll)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(gallery.close)
+        outer.addWidget(close_btn)
+
+        self._svg_gallery = gallery
+        self._svg_grid = grid
+
+    def _populate_svg_gallery(self):
+        grid = self._svg_grid
+        if grid is None:
+            return
+        while grid.count():
+            item = grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
 
         svg_files = sorted(
             SVG_DIR.glob("*.svg"),
@@ -504,48 +674,68 @@ class MainWindow(QMainWindow):
                 0,
                 0,
             )
-        else:
-            for index, svg_file in enumerate(svg_files):
-                button = QToolButton()
-                button.setToolButtonStyle(
-                    Qt.ToolButtonStyle.ToolButtonTextUnderIcon
-                )
-                button.setIcon(self._svg_thumbnail(svg_file))
-                button.setIconSize(QSize(104, 104))
-                button.setText(svg_file.stem)
-                button.setToolTip(svg_file.name)
-                button.clicked.connect(
-                    lambda checked=False, path=svg_file: self._load_svg_file(path)
-                )
-                grid.addWidget(button, index // 4, index % 4)
+            return
 
-        scroll.setWidget(host)
-        outer.addWidget(scroll)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(gallery.close)
-        outer.addWidget(close_btn)
+        for index, svg_file in enumerate(svg_files):
+            button = QToolButton()
+            button.setToolButtonStyle(
+                Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+            )
+            button.setIcon(self._svg_thumbnail(svg_file))
+            button.setIconSize(QSize(136, 136))
+            button.setText(svg_file.stem)
+            button.setToolTip(f"{svg_file.name} — click to enlarge")
+            button.clicked.connect(
+                lambda checked=False, path=svg_file: self._show_svg_preview(path)
+            )
+            grid.addWidget(button, index // 4, index % 4)
 
-        self._svg_gallery = gallery
-        gallery.show()
+    def _refresh_svg_gallery(self):
+        if self._svg_gallery is not None and self._svg_gallery.isVisible():
+            self._populate_svg_gallery()
 
     def _svg_thumbnail(self, svg_file):
-        renderer = QSvgRenderer(str(svg_file))
-        pixmap = QPixmap(104, 104)
+        side = 136
+        pixmap = QPixmap(side * 2, side * 2)
+        pixmap.setDevicePixelRatio(2.0)
         pixmap.fill(Qt.GlobalColor.transparent)
+        renderer = QSvgRenderer(str(svg_file))
         painter = QPainter(pixmap)
-        renderer.render(painter)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        renderer.render(painter, QRectF(0, 0, side, side))
         painter.end()
         return QIcon(pixmap)
 
-    def _load_svg_file(self, svg_file):
-        try:
-            svg_code = svg_file.read_text(encoding="utf-8")
-            self._show_svg(svg_code)
-        except OSError:
-            pass
-        if self._svg_gallery is not None:
-            self._svg_gallery.close()
-            self._svg_gallery = None
+    def _show_svg_preview(self, svg_file):
+        if self._svg_preview is not None:
+            self._svg_preview.close()
+            self._svg_preview = None
+
+        preview = QWidget(
+            self,
+            Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint,
+        )
+        preview.setWindowTitle(f"Milky — {svg_file.stem}")
+        preview.resize(560, 620)
+
+        layout = QVBoxLayout(preview)
+        svg = QSvgWidget(str(svg_file))
+        svg.setFixedSize(520, 520)
+        layout.addWidget(svg, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        caption = QLabel(svg_file.name)
+        caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        caption.setStyleSheet("color: #666;")
+        layout.addWidget(caption)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(preview.close)
+        layout.addWidget(close_btn)
+
+        self._svg_preview = preview
+        self._center_on_screen(preview)
+        preview.show()
+        preview.raise_()
 
     def open_settings(self):
         dialog = SettingsDialog(self._settings, self)
@@ -560,6 +750,7 @@ class MainWindow(QMainWindow):
 
     def show_status(self, text):
         self._bubble_timer.stop()
+        self._drawing_timer.stop()
         self.set_gif("milka_idle.gif")
         self.bubble.setText(text)
         self.set_widget_visible(self.bubble, True)
@@ -591,11 +782,17 @@ class MainWindow(QMainWindow):
         # Stop TTS player
         if self._tts_player is not None:
             self._tts_player.stop()
+        self._drawing_timer.stop()
+        self._toast_timer.stop()
+        self._hide_drawing_toast(immediate=True)
         # Close selfie window
         if self._selfie_window is not None:
             self._selfie_window.close()
             self._selfie_window = None
-        # Close SVG gallery
+        # Close drawing preview and gallery
+        if self._svg_preview is not None:
+            self._svg_preview.close()
+            self._svg_preview = None
         if self._svg_gallery is not None:
             self._svg_gallery.close()
             self._svg_gallery = None
