@@ -44,6 +44,7 @@ from settings_store import (
     PROVIDER_TYPES,
     default_tts,
     normalize_drawing,
+    normalize_vision,
     save_settings,
 )
 
@@ -59,6 +60,7 @@ class SettingsDialog(QDialog):
         self._providers = self._settings["providers"]
         self._tts = self._settings.get("tts") or default_tts()
         self._drawing = normalize_drawing(self._settings.get("drawing"))
+        self._vision = normalize_vision(self._settings.get("vision"))
         self._outfit = load_outfit()
         self._loading = False
         self._network = QNetworkAccessManager(self)
@@ -68,6 +70,7 @@ class SettingsDialog(QDialog):
 
         self._build_ui()
         self._refresh_list(self._active_row())
+        self._load_vision()
         self._load_tts()
         self._load_drawing()
         self._refresh_outfit_list()
@@ -200,6 +203,33 @@ class SettingsDialog(QDialog):
         tts_form.addRow(tts_hint)
         general_root.addWidget(tts_group)
 
+        vision_group = QGroupBox("Screen vision")
+        vision_form = QFormLayout(vision_group)
+        self.vision_enabled_check = QCheckBox(
+            "Let Milky look at the screen when asked"
+        )
+        self.vision_provider_combo = QComboBox()
+        self.vision_model_edit = QLineEdit()
+        self.vision_model_edit.setPlaceholderText("qwen/qwen3.8-27b")
+        vision_hint = QLabel(
+            "Groq's <b>qwen/qwen3.8-27b</b> accepts images and is a good "
+            "default. The active chat model can stay text-only. For a local "
+            "Ollama vision model, pull something like <code>qwen3-vl:8b</code> "
+            "and select the Ollama endpoint here.\n"
+            "A screenshot is captured only when you ask about the screen or "
+            "choose <b>Look at screen</b> in the menu. It is sent to the "
+            "vision endpoint and is not saved to disk."
+        )
+        vision_hint.setWordWrap(True)
+        vision_hint.setTextFormat(Qt.TextFormat.RichText)
+        vision_hint.setStyleSheet("color: #777;")
+
+        vision_form.addRow(self.vision_enabled_check)
+        vision_form.addRow("Vision endpoint", self.vision_provider_combo)
+        vision_form.addRow("Vision model", self.vision_model_edit)
+        vision_form.addRow(vision_hint)
+        general_root.addWidget(vision_group)
+
         drawing_group = QGroupBox("Drawings")
         drawing_form = QFormLayout(drawing_group)
         self.drawing_provider_combo = QComboBox()
@@ -314,6 +344,12 @@ class SettingsDialog(QDialog):
         self.groq_voice_edit.textChanged.connect(self._tts_changed)
         self.tts_test_button.clicked.connect(self._test_milka_tts)
 
+        self.vision_enabled_check.toggled.connect(self._vision_changed)
+        self.vision_provider_combo.currentIndexChanged.connect(
+            self._vision_provider_changed
+        )
+        self.vision_model_edit.textChanged.connect(self._vision_changed)
+
         self.drawing_provider_combo.currentIndexChanged.connect(
             self._drawing_changed
         )
@@ -349,6 +385,7 @@ class SettingsDialog(QDialog):
         self._loading = False
         if self._providers:
             self.provider_list.setCurrentRow(max(0, min(row, len(self._providers) - 1)))
+        self._refresh_vision_providers()
 
     def _load_provider(self, row):
         if self._loading or not (0 <= row < len(self._providers)):
@@ -429,6 +466,95 @@ class SettingsDialog(QDialog):
         ):
             widget.setEnabled(enabled and provider == "groq")
         self.tts_test_button.setEnabled(enabled and provider == "milka")
+
+    def _refresh_vision_providers(self):
+        if not hasattr(self, "vision_provider_combo"):
+            return
+        current = self.vision_provider_combo.currentData()
+        names = {provider["name"] for provider in self._providers}
+        if current not in names:
+            current = self._vision.get("provider")
+        previous_loading = self._loading
+        self._loading = True
+        self.vision_provider_combo.clear()
+        for provider in self._providers:
+            self.vision_provider_combo.addItem(
+                provider["name"], provider["name"]
+            )
+        index = self.vision_provider_combo.findData(current)
+        if index < 0:
+            index = 0
+        if self.vision_provider_combo.count():
+            self.vision_provider_combo.setCurrentIndex(index)
+            self._vision["provider"] = self.vision_provider_combo.currentData()
+        else:
+            self._vision["provider"] = ""
+        self._loading = previous_loading
+
+    def _load_vision(self):
+        self._loading = True
+        self._refresh_vision_providers()
+        self.vision_enabled_check.setChecked(
+            bool(self._vision.get("enabled", True))
+        )
+        self.vision_model_edit.setText(
+            self._vision.get("model", "qwen/qwen3.8-27b")
+        )
+        self._loading = False
+        self._update_vision_state()
+
+    def _vision_provider_changed(self):
+        if not self._loading:
+            name = self.vision_provider_combo.currentData()
+            provider = next(
+                (
+                    item
+                    for item in self._providers
+                    if item["name"] == name
+                ),
+                None,
+            )
+            model = self.vision_model_edit.text().strip()
+            suggested = None
+            if provider is not None:
+                if (
+                    provider["type"] == "ollama"
+                    and model == "qwen/qwen3.8-27b"
+                ):
+                    suggested = "qwen3-vl:8b"
+                elif (
+                    "groq" in provider["base_url"].lower()
+                    and model in ("", "qwen3-vl:8b")
+                ):
+                    suggested = "qwen/qwen3.8-27b"
+            if suggested:
+                self._loading = True
+                self.vision_model_edit.setText(suggested)
+                self._loading = False
+        self._vision_changed()
+
+    def _vision_changed(self):
+        self._store_vision()
+        self._update_vision_state()
+
+    def _store_vision(self):
+        if self._loading:
+            return
+        provider = self.vision_provider_combo.currentData() or ""
+        model = self.vision_model_edit.text().strip()
+        self._vision = {
+            "enabled": self.vision_enabled_check.isChecked(),
+            "provider": provider,
+            "model": model or "qwen/qwen3.8-27b",
+            "max_width": int(self._vision.get("max_width", 1600)),
+            "jpeg_quality": int(self._vision.get("jpeg_quality", 82)),
+        }
+        self._settings["vision"] = dict(self._vision)
+
+    def _update_vision_state(self):
+        enabled = self.vision_enabled_check.isChecked()
+        self.vision_provider_combo.setEnabled(enabled)
+        self.vision_model_edit.setEnabled(enabled)
 
     def _load_drawing(self):
         self._loading = True
@@ -728,9 +854,13 @@ class SettingsDialog(QDialog):
         provider["api_key"] = self.key_edit.text().strip()
         if name and self._settings.get("active") == old_name:
             self._settings["active"] = name
+        if name and self._vision.get("provider") == old_name:
+            self._vision["provider"] = name
+            self._settings["vision"] = dict(self._vision)
         item = self.provider_list.item(row)
         if item is not None:
             item.setText(name or "(unnamed)")
+        self._refresh_vision_providers()
 
     def _set_active(self, checked):
         if self._loading:
@@ -780,6 +910,7 @@ class SettingsDialog(QDialog):
         self._store_current()
         self._store_tts()
         self._store_drawing()
+        self._store_vision()
         names = [provider["name"] for provider in self._providers]
         if any(not name for name in names):
             QMessageBox.warning(self, "Settings", "Every endpoint must have a name.")
@@ -797,6 +928,23 @@ class SettingsDialog(QDialog):
                 return
         if self._settings.get("active") not in names:
             self._settings["active"] = names[0]
+        vision = self._settings.get("vision") or {}
+        if vision.get("enabled"):
+            if vision.get("provider") not in names:
+                QMessageBox.warning(
+                    self,
+                    "Screen vision",
+                    "Choose an existing endpoint for screen vision.",
+                )
+                return
+            if not vision.get("model"):
+                QMessageBox.warning(
+                    self,
+                    "Screen vision",
+                    "Enter a vision model, for example qwen/qwen3.8-27b "
+                    "or qwen3-vl:8b.",
+                )
+                return
         tts = self._settings.get("tts") or {}
         if tts.get("enabled"):
             if tts.get("provider") == "milka":

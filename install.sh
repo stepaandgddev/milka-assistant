@@ -127,6 +127,7 @@ REQUIRED_FILES=(
     clothing_overlay.py
     outfit_store.py
     requirements.txt
+    screen_vision.py
     milka_idle.svg
 )
 
@@ -187,7 +188,7 @@ mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$APPLICATIONS_DIR" "$ICON_DIR"
 if [ "$SOURCE_DIR" != "$INSTALL_DIR" ]; then
     for file in \
         main.py ai_client.py drawing_skill.py image_service.py \
-        settings_dialog.py settings_store.py \
+        settings_dialog.py settings_store.py screen_vision.py \
         autostart.py runtime.py tts.py svg_art.py clothing_art.py \
         clothing_overlay.py outfit_store.py web_search.py \
         milka_idle.svg requirements.txt \

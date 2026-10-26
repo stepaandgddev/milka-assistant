@@ -32,6 +32,16 @@ DRAWING_PROVIDER_VALUES = {value for value, _ in DRAWING_PROVIDERS}
 
 DEFAULT_CLOUDFLARE_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 
+DEFAULT_VISION_PROVIDER = os.environ.get(
+    "VISION_PROVIDER", "Groq"
+).strip()
+DEFAULT_VISION_MODEL = os.environ.get(
+    "VISION_MODEL", "qwen/qwen3.8-27b"
+).strip()
+DEFAULT_OLLAMA_VISION_MODEL = os.environ.get(
+    "OLLAMA_VISION_MODEL", "qwen3-vl:8b"
+).strip()
+
 DEFAULT_MILKA_TTS_URL = os.environ.get(
     "MILKA_TTS_URL", "http://192.168.1.100:8765"
 ).strip()
@@ -110,6 +120,46 @@ def default_drawing():
         "cloudflare_model": model or DEFAULT_CLOUDFLARE_IMAGE_MODEL,
         "cloudflare_steps": _int_value(
             os.environ.get("CLOUDFLARE_IMAGE_STEPS", "4"), 4, 1, 8
+        ),
+    }
+
+
+def default_vision():
+    return {
+        "enabled": _env_bool("VISION_ENABLED", True),
+        "provider": DEFAULT_VISION_PROVIDER or "Groq",
+        "model": DEFAULT_VISION_MODEL or "qwen/qwen3.8-27b",
+        "max_width": _int_value(
+            os.environ.get("VISION_MAX_WIDTH", "1600"), 1600, 640, 3840
+        ),
+        "jpeg_quality": _int_value(
+            os.environ.get("VISION_JPEG_QUALITY", "82"), 82, 50, 95
+        ),
+    }
+
+
+def normalize_vision(raw):
+    defaults = default_vision()
+    if not isinstance(raw, dict):
+        return defaults
+
+    provider = str(raw.get("provider", defaults["provider"])).strip()
+    model = str(raw.get("model", defaults["model"])).strip()
+    return {
+        "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "provider": provider or defaults["provider"],
+        "model": model or defaults["model"],
+        "max_width": _int_value(
+            raw.get("max_width", defaults["max_width"]),
+            defaults["max_width"],
+            640,
+            3840,
+        ),
+        "jpeg_quality": _int_value(
+            raw.get("jpeg_quality", defaults["jpeg_quality"]),
+            defaults["jpeg_quality"],
+            50,
+            95,
         ),
     }
 
@@ -221,12 +271,22 @@ def default_settings():
                 "api_key": groq_key,
             }
         )
+    vision = default_vision()
+    if not any(provider["name"] == vision["provider"] for provider in providers):
+        vision["provider"] = providers[0]["name"]
+        if providers[0]["type"] == "ollama" and vision["model"] in (
+            "",
+            DEFAULT_VISION_MODEL,
+        ):
+            vision["model"] = DEFAULT_OLLAMA_VISION_MODEL
+
     return {
         "active": providers[0]["name"],
         "providers": providers,
         "autostart": False,
         "tts": default_tts(),
         "drawing": default_drawing(),
+        "vision": vision,
     }
 
 
@@ -276,12 +336,33 @@ def load_settings():
     if active not in names:
         active = providers[0]["name"]
 
+    vision = normalize_vision(data.get("vision"))
+    if vision["provider"] not in names:
+        vision["provider"] = active
+        raw_vision = data.get("vision")
+        if (
+            not isinstance(raw_vision, dict)
+            or not str(raw_vision.get("model", "")).strip()
+            or vision["model"] == DEFAULT_VISION_MODEL
+        ):
+            selected = next(
+                (
+                    provider
+                    for provider in providers
+                    if provider["name"] == vision["provider"]
+                ),
+                providers[0],
+            )
+            if selected["type"] == "ollama":
+                vision["model"] = DEFAULT_OLLAMA_VISION_MODEL
+
     return {
         "active": active,
         "providers": providers,
         "autostart": bool(data.get("autostart", False)),
         "tts": normalize_tts(data.get("tts")),
         "drawing": normalize_drawing(data.get("drawing")),
+        "vision": vision,
     }
 
 
@@ -296,6 +377,14 @@ def save_settings(settings):
         pass
 
 
+def provider_named(settings, name):
+    name = str(name or "").strip()
+    for provider in settings.get("providers") or []:
+        if provider["name"] == name:
+            return provider
+    return None
+
+
 def active_provider(settings):
     providers = settings.get("providers") or []
     if not providers:
@@ -305,3 +394,16 @@ def active_provider(settings):
         if provider["name"] == active:
             return provider
     return providers[0]
+
+
+def vision_provider(settings):
+    """Return the endpoint used to look at screenshots."""
+    vision = settings.get("vision") or {}
+    provider = provider_named(settings, vision.get("provider"))
+    if provider is None:
+        provider = active_provider(settings)
+    result = dict(provider)
+    model = str(vision.get("model") or "").strip()
+    if model:
+        result["model"] = model
+    return result

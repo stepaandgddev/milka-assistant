@@ -67,6 +67,7 @@ from ai_client import (
     load_memory,
     save_history,
     save_memory,
+    wants_screen_view,
 )
 from clothing_art import (
     fallback_clothing,
@@ -76,8 +77,9 @@ from clothing_art import (
 from clothing_overlay import AvatarLabel, clothing_fits, validate_clothing_svg
 from outfit_store import infer_slot, load_outfit, save_outfit, wear_item
 from runtime import data_path, resource_path
+from screen_vision import ScreenCaptureError, capture_screen
 from settings_dialog import SettingsDialog
-from settings_store import active_provider, load_settings
+from settings_store import active_provider, load_settings, vision_provider
 from svg_art import (
     asked_to_draw,
     draw_for,
@@ -141,7 +143,15 @@ class ChatWorker(QThread):
     failed = Signal(str)
 
     def __init__(
-        self, text, history, memory, provider, parent=None, image_settings=None
+        self,
+        text,
+        history,
+        memory,
+        provider,
+        parent=None,
+        image_settings=None,
+        vision_provider=None,
+        screen_image=None,
     ):
         super().__init__(parent)
         self._text = text
@@ -149,6 +159,8 @@ class ChatWorker(QThread):
         self._memory = memory
         self._provider = provider
         self._image_settings = image_settings or {}
+        self._vision_provider = vision_provider
+        self._screen_image = screen_image
 
     def run(self):
         try:
@@ -159,6 +171,8 @@ class ChatWorker(QThread):
                     history=self._history,
                     memory=self._memory,
                     image_settings=self._image_settings,
+                    vision_provider=self._vision_provider,
+                    screen_image=self._screen_image,
                 )
             )
         except Exception as error:
@@ -247,6 +261,7 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
         self._drawing_settings = self._settings.get("drawing") or {}
+        self._vision_settings = self._settings.get("vision") or {}
         self._positioned = False
         self._tray = None
         self._tts_player = AudioPlayer(self)
@@ -330,6 +345,11 @@ class MainWindow(QMainWindow):
         if not text:
             self.hide_input("milka_listening.gif")
             return
+
+        screen_image = self._capture_for_request(text)
+        if wants_screen_view(text) and screen_image is None:
+            return
+
         self.hide_input("milka_thinking.gif")
         self.message_submitted.emit(text)
         self._last_user_text = text
@@ -337,9 +357,29 @@ class MainWindow(QMainWindow):
         self._history.append({"role": "user", "content": text})
         self._history = self._history[-HISTORY_LIMIT:]
         save_history(self._history)
-        self.ask_ai(text, history, dict(self._memory))
+        self.ask_ai(text, history, dict(self._memory), screen_image=screen_image)
 
-    def ask_ai(self, text, history, memory):
+    def _capture_for_request(self, text):
+        if not wants_screen_view(text):
+            return None
+        if not self._vision_settings.get("enabled", False):
+            self.show_status(
+                "Screen vision is disabled. Enable it in Settings → Screen vision."
+            )
+            return None
+        try:
+            return capture_screen(
+                max_width=self._vision_settings.get("max_width", 1600),
+                jpeg_quality=self._vision_settings.get("jpeg_quality", 82),
+            )
+        except ScreenCaptureError as error:
+            self.show_status(f"Could not capture the screen: {error}")
+            return None
+
+    def ask_ai(self, text, history, memory, screen_image=None):
+        selected_vision = (
+            vision_provider(self._settings) if screen_image is not None else None
+        )
         worker = ChatWorker(
             text,
             history,
@@ -347,12 +387,28 @@ class MainWindow(QMainWindow):
             dict(self._provider),
             self,
             image_settings=dict(self._drawing_settings),
+            vision_provider=selected_vision,
+            screen_image=screen_image,
         )
         self._worker = worker
         worker.replied.connect(lambda result, w=worker: self.show_reply(w, result))
         worker.failed.connect(lambda error, w=worker: self.show_error(w, error))
         worker.finished.connect(lambda w=worker: self.clear_worker(w))
         worker.start()
+
+    def look_at_screen(self):
+        """Ask Milky to describe the current screen from the tray/context menu."""
+        if self._worker is not None:
+            return
+        if not self._vision_settings.get("enabled", False):
+            self.show_status(
+                "Screen vision is disabled. Enable it in Settings → Screen vision."
+            )
+            return
+        self.input.setText(
+            "Look at the screen and briefly describe what is happening."
+        )
+        self.submit_input()
 
     def clear_worker(self, worker):
         if self._worker is worker:
@@ -479,6 +535,8 @@ class MainWindow(QMainWindow):
         toggle_action.triggered.connect(self.toggle_window)
         settings_action = menu.addAction("Settings...")
         settings_action.triggered.connect(self.open_settings)
+        look_action = menu.addAction("Look at screen")
+        look_action.triggered.connect(self.look_at_screen)
         svg_action = menu.addAction("Show drawing gallery")
         svg_action.triggered.connect(self.show_svg_gallery)
         menu.addSeparator()
@@ -989,6 +1047,7 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._provider = active_provider(self._settings)
         self._drawing_settings = self._settings.get("drawing") or {}
+        self._vision_settings = self._settings.get("vision") or {}
         self._tts_settings = self._settings.get("tts") or {}
         self._outfit = load_outfit()
         self.gif_label.set_outfit(self._outfit)
@@ -1014,6 +1073,8 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         settings_action = menu.addAction("Settings...")
         settings_action.triggered.connect(self.open_settings)
+        look_action = menu.addAction("Look at screen")
+        look_action.triggered.connect(self.look_at_screen)
         toggle_action = menu.addAction("Show / Hide")
         toggle_action.triggered.connect(self.toggle_window)
         menu.addSeparator()

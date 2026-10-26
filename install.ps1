@@ -138,6 +138,7 @@ $requiredFiles = @(
     'clothing_art.py',
     'clothing_overlay.py',
     'outfit_store.py',
+    'screen_vision.py',
     'requirements.txt',
     'milka_idle.svg'
 )
@@ -171,6 +172,7 @@ $files = @(
     'clothing_art.py',
     'clothing_overlay.py',
     'outfit_store.py',
+    'screen_vision.py',
     'web_search.py',
     'milka_idle.svg',
     'requirements.txt',
