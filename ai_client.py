@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 from urllib.parse import urlsplit
@@ -143,7 +144,8 @@ SELFIE_REFERENCE = (
     + SELFIE_PATHS
     + "\nWhen drawing a scene with Milky, reuse these face paths, scale and "
     "place them to fit the scene, and add the requested background and "
-    "objects around her. Do not return only the face.\n"
+    "objects around her. Keep the whole face, including both eyes and the "
+    "smile, inside the viewBox with a margin. Do not return only the face.\n"
 )
 
 TOOLS = [
@@ -579,6 +581,128 @@ def normalize_search_query(value):
     return query[:200] or None
 
 
+SELFIE_SIGNATURE = "M284 273C284 218 251 189"
+# Bounds of the official face paths in the 640x640 coordinate space,
+# including half of the 17px stroke.
+SELFIE_BOUNDS = (54.5, 170.5, 585.5, 469.5)
+
+
+def _matrix_multiply(m1, m2):
+    a1, b1, c1, d1, e1, f1 = m1
+    a2, b2, c2, d2, e2, f2 = m2
+    return (
+        a1 * a2 + c1 * b2,
+        b1 * a2 + d1 * b2,
+        a1 * c2 + c1 * d2,
+        b1 * c2 + d1 * d2,
+        a1 * e2 + c1 * f2 + e1,
+        b1 * e2 + d1 * f2 + f1,
+    )
+
+
+def _parse_transform(value):
+    if not value:
+        return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    tokens = re.findall(r"([A-Za-z]+)\s*\(([^)]*)\)", value)
+    if not tokens:
+        return None
+    for name, args in tokens:
+        try:
+            nums = [float(n) for n in re.split(r"[\s,]+", args.strip()) if n]
+        except ValueError:
+            return None
+        name = name.lower()
+        if name == "translate":
+            if len(nums) == 1:
+                tx, ty = nums[0], 0.0
+            elif len(nums) >= 2:
+                tx, ty = nums[0], nums[1]
+            else:
+                return None
+            op = (1.0, 0.0, 0.0, 1.0, tx, ty)
+        elif name == "scale":
+            if len(nums) == 1:
+                sx = sy = nums[0]
+            elif len(nums) >= 2:
+                sx, sy = nums[0], nums[1]
+            else:
+                return None
+            op = (sx, 0.0, 0.0, sy, 0.0, 0.0)
+        elif name == "rotate":
+            if len(nums) == 1:
+                angle, cx, cy = nums[0], 0.0, 0.0
+            elif len(nums) >= 3:
+                angle, cx, cy = nums[0], nums[1], nums[2]
+            else:
+                return None
+            angle = math.radians(angle)
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            op = (cos_a, sin_a, -sin_a, cos_a, 0.0, 0.0)
+            if cx or cy:
+                op = _matrix_multiply(
+                    (1.0, 0.0, 0.0, 1.0, cx, cy),
+                    _matrix_multiply(op, (1.0, 0.0, 0.0, 1.0, -cx, -cy)),
+                )
+        elif name == "matrix":
+            if len(nums) != 6:
+                return None
+            op = tuple(nums)
+        elif name == "skewx":
+            if len(nums) != 1:
+                return None
+            op = (1.0, 0.0, math.tan(math.radians(nums[0])), 1.0, 0.0, 0.0)
+        elif name == "skewy":
+            if len(nums) != 1:
+                return None
+            op = (1.0, math.tan(math.radians(nums[0])), 0.0, 1.0, 0.0, 0.0)
+        else:
+            return None
+        matrix = _matrix_multiply(matrix, op)
+    return matrix
+
+
+def _viewbox(code):
+    match = re.search(r'\bviewBox\s*=\s*["\']([^"\']+)["\']', code, re.I)
+    if match:
+        try:
+            nums = [float(n) for n in re.split(r"[\s,]+", match.group(1).strip()) if n]
+        except ValueError:
+            nums = []
+        if len(nums) == 4 and nums[2] > 0 and nums[3] > 0:
+            return tuple(nums)
+    width = re.search(r'\bwidth\s*=\s*["\']([\d.]+)', code, re.I)
+    height = re.search(r'\bheight\s*=\s*["\']([\d.]+)', code, re.I)
+    return (
+        0.0,
+        0.0,
+        float(width.group(1)) if width else 200.0,
+        float(height.group(1)) if height else 200.0,
+    )
+
+
+def _selfie_group(code):
+    position = code.find(SELFIE_SIGNATURE)
+    if position == -1:
+        return None
+    group_start = -1
+    group_end = -1
+    for match in re.finditer(r"<g\b[^>]*>", code[:position], re.I):
+        group_start = match.start()
+        group_end = match.end()
+    if group_start == -1:
+        return None
+    last_close = code.rfind("</g>", 0, position)
+    if group_start < last_close:
+        return None
+    return group_start, group_end, code[group_start:group_end]
+
+
+def _group_transform(tag):
+    match = re.search(r'\btransform\s*=\s*["\']([^"\']*)["\']', tag, re.I)
+    return match.group(1) if match else None
+
+
 def fix_selfie_fill(code):
     """Keep copied self-portrait line art unfilled.
 
@@ -586,14 +710,13 @@ def fix_selfie_fill(code):
     ``fill="none"`` attribute. SVG then fills the closed eye loops and the
     smile with black.
     """
-    signature = "M284 273C284 218 251 189"
-    if signature not in code:
+    if SELFIE_SIGNATURE not in code:
         return code
     pattern = re.compile(r"<g\b([^>]*)>(.*?)</g>", re.DOTALL)
 
     def repl(match):
         attrs, inner = match.groups()
-        if signature in inner and not re.search(r"\bfill\s*=", attrs):
+        if SELFIE_SIGNATURE in inner and not re.search(r"\bfill\s*=", attrs):
             return f'<g fill="none"{attrs}>{inner}</g>'
         return match.group(0)
 
@@ -604,6 +727,87 @@ def fix_selfie_fill(code):
         code,
     )
     return code
+
+
+def fit_selfie_group(code, always=False):
+    """Shrink and move copied self-portrait art so it fits inside its viewBox."""
+    if SELFIE_SIGNATURE not in code:
+        return code
+    group = _selfie_group(code)
+    if group is None:
+        return code
+    start, end, tag = group
+    transform_value = _group_transform(tag)
+    if transform_value is None and not always:
+        return code
+    matrix = _parse_transform(transform_value) if transform_value else (
+        1.0, 0.0, 0.0, 1.0, 0.0, 0.0
+    )
+    if matrix is None:
+        return code
+
+    view_x, view_y, view_w, view_h = _viewbox(code)
+    x0, y0, x1, y1 = SELFIE_BOUNDS
+    corners = [
+        (
+            matrix[0] * x + matrix[2] * y + matrix[4],
+            matrix[1] * x + matrix[3] * y + matrix[5],
+        )
+        for x in (x0, x1)
+        for y in (y0, y1)
+    ]
+    bx0 = min(point[0] for point in corners)
+    bx1 = max(point[0] for point in corners)
+    by0 = min(point[1] for point in corners)
+    by1 = max(point[1] for point in corners)
+    box_w = bx1 - bx0
+    box_h = by1 - by0
+    if box_w <= 0 or box_h <= 0:
+        return code
+
+    margin = 0.15 * min(view_w, view_h)
+    available_w = view_w - 2 * margin
+    available_h = view_h - 2 * margin
+    if available_w <= 0 or available_h <= 0:
+        return code
+    fit = min(1.0, available_w / box_w, available_h / box_h)
+    if fit >= 0.999:
+        return code
+
+    center_x = (bx0 + bx1) / 2
+    center_y = (by0 + by1) / 2
+    new_w = box_w * fit
+    new_h = box_h * fit
+    min_cx = view_x + margin + new_w / 2
+    max_cx = view_x + view_w - margin - new_w / 2
+    min_cy = view_y + margin + new_h / 2
+    max_cy = view_y + view_h - margin - new_h / 2
+    desired_cx = min(max(center_x, min_cx), max_cx)
+    desired_cy = min(max(center_y, min_cy), max_cy)
+    adjustment = (
+        fit,
+        0.0,
+        0.0,
+        fit,
+        desired_cx - fit * center_x,
+        desired_cy - fit * center_y,
+    )
+    fitted = _matrix_multiply(adjustment, matrix)
+    values = " ".join(
+        f"{value:.4f}".rstrip("0").rstrip(".") or "0" for value in fitted
+    )
+    transform = f"matrix({values})"
+    if transform_value is None:
+        new_tag = tag[:-1] + f' transform="{transform}">'
+    else:
+        new_tag = re.sub(
+            r'\btransform\s*=\s*["\'][^"\']*["\']',
+            f'transform="{transform}"',
+            tag,
+            count=1,
+            flags=re.I,
+        )
+    return code[:start] + new_tag + code[end:]
 
 
 def normalize_svg(value):
@@ -626,7 +830,7 @@ def normalize_svg(value):
     if end != -1:
         code = code[: end + len("</svg>")]
     if code:
-        code = fix_selfie_fill(code)
+        code = fit_selfie_group(fix_selfie_fill(code), always=True)
     return code or None
 
 

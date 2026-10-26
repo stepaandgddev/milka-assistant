@@ -59,6 +59,7 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from ai_client import (
     EMOTIONS,
     chat,
+    fit_selfie_group,
     fix_selfie_fill,
     load_history,
     load_memory,
@@ -86,7 +87,7 @@ def repair_saved_selfies():
             code = svg_file.read_text(encoding="utf-8")
         except OSError:
             continue
-        fixed = fix_selfie_fill(code)
+        fixed = fit_selfie_group(fix_selfie_fill(code))
         if fixed == code:
             continue
         try:
