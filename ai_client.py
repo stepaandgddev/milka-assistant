@@ -119,9 +119,11 @@ Links and search:
 
 Drawing (SVG):
 - If the user asks you to draw, create an image, make a picture, or draw something, fill the svg field with valid SVG markup.
-- You can draw simple shapes, faces, animals, objects, scenes — anything expressible in SVG.
-- Keep the SVG compact, use a viewBox like "0 0 200 200", and use bright friendly colors.
-- You may reference milka_idle.svg style if helpful, but generate your own SVG code.
+- Make every drawing detailed and polished: a soft background, gradients, shading, highlights and several shapes so it looks like a real illustration.
+- Use a viewBox like "0 0 200 200" (or larger if the scene needs room) and bright friendly colors.
+- Use <defs> for gradients, semi-transparent ellipses for soft shadows, rounded lines, and small details such as eye highlights, blush or texture.
+- Keep the markup reasonably compact, but never return just a few bare outlines.
+- You may take inspiration from milka_idle.svg, but always generate your own SVG code.
 - In text, briefly say what you drew.
 
 Rules:
@@ -176,9 +178,10 @@ TOOLS = [
                     "svg": {
                         "type": "string",
                         "description": (
-                            "Optional. SVG image code to draw something for the user. "
-                            "Use this when the user asks you to draw, create an image, "
-                            "or make a picture. Return valid SVG markup as a string."
+                            "Optional. Detailed, valid SVG markup to draw something "
+                            "for the user: background, gradients, shading and small "
+                            "details. Use this when the user asks you to draw, create "
+                            "an image, or make a picture."
                         ),
                     },
                 },
@@ -218,7 +221,8 @@ RETRY_PROMPT = (
     "emotion. If the user shared a fact about themselves, fill remember_key "
     "and remember_value. If the user asked to open a link, fill open_urls. If "
     "they asked to find something, fill search_query. If they asked you to "
-    "draw something, fill svg with valid SVG markup."
+    "draw something, fill svg with detailed, valid SVG markup that includes a "
+    "background, gradients and several shapes."
 )
 
 
@@ -560,6 +564,28 @@ def normalize_search_query(value):
     return query[:200] or None
 
 
+def normalize_svg(value):
+    """Return clean SVG markup even if the model wrapped it in code fences."""
+    if value is None:
+        return None
+    code = str(value).strip()
+    if not code:
+        return None
+    if code.startswith("```"):
+        code = code.strip("`")
+        if code.lower().startswith("svg"):
+            code = code[3:]
+        code = code.strip()
+    start = code.find("<svg")
+    if start == -1:
+        return None
+    code = code[start:]
+    end = code.rfind("</svg>")
+    if end != -1:
+        code = code[: end + len("</svg>")]
+    return code or None
+
+
 def parse_arguments(arguments):
     emotion = None
     reply = None
@@ -583,18 +609,13 @@ def parse_arguments(arguments):
     open_urls = normalize_urls(
         arguments.get("open_urls") or arguments.get("open_url")
     )
-    svg_code = arguments.get("svg")
-    if svg_code is not None:
-        svg_code = str(svg_code).strip()
-        if svg_code and not svg_code.startswith("<svg"):
-            svg_code = None
     return {
         "emotion": emotion,
         "text": reply,
         "memories": memories,
         "open_urls": open_urls,
         "search_query": normalize_search_query(arguments.get("search_query")),
-        "svg": svg_code,
+        "svg": normalize_svg(arguments.get("svg")),
     }
 
 
@@ -608,6 +629,7 @@ def parse_json_answer(content):
             "memories": {},
             "open_urls": [],
             "search_query": None,
+            "svg": None,
         }
     if not isinstance(data, dict):
         return {
@@ -616,6 +638,7 @@ def parse_json_answer(content):
             "memories": {},
             "open_urls": [],
             "search_query": None,
+            "svg": None,
         }
     return parse_arguments(data)
 
@@ -626,6 +649,7 @@ def parse_message(message):
     memories = {}
     open_urls = []
     search_query = None
+    svg = None
     responded = False
 
     for call in message.get("tool_calls") or []:
@@ -650,6 +674,7 @@ def parse_message(message):
                 if url not in open_urls:
                     open_urls.append(url)
             search_query = result["search_query"] or search_query
+            svg = result["svg"] or svg
         elif name == "remember":
             remember_fact(
                 memories,
@@ -674,6 +699,7 @@ def parse_message(message):
         "memories": memories,
         "open_urls": open_urls[:URL_LIMIT],
         "search_query": search_query,
+        "svg": svg,
         "responded": responded,
     }
 
@@ -699,6 +725,7 @@ def chat(text, provider, history=None, memory=None):
         "memories": {},
         "open_urls": [],
         "search_query": None,
+        "svg": None,
         "responded": False,
     }
     last_message = {}
@@ -721,6 +748,7 @@ def chat(text, provider, history=None, memory=None):
                 ],
                 "open_urls": fallback.get("open_urls") or [],
                 "search_query": fallback.get("search_query"),
+                "svg": fallback.get("svg"),
             }
         result = parse_message(last_message)
         memories.update(result["memories"])
@@ -749,6 +777,7 @@ def chat(text, provider, history=None, memory=None):
             "text": fallback["text"] or result["text"],
             "open_urls": fallback.get("open_urls") or result["open_urls"],
             "search_query": fallback.get("search_query") or result["search_query"],
+            "svg": fallback.get("svg") or result.get("svg"),
         }
 
     return {
@@ -759,4 +788,5 @@ def chat(text, provider, history=None, memory=None):
         ],
         "open_urls": result.get("open_urls") or [],
         "search_query": result.get("search_query"),
+        "svg": result.get("svg"),
     }

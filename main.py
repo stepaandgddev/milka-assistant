@@ -14,12 +14,15 @@ if (
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QGridLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMenu,
     QPushButton,
+    QScrollArea,
     QSystemTrayIcon,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,10 +33,13 @@ from PySide6.QtGui import (
     QImage,
     QMovie,
     QMouseEvent,
+    QPainter,
+    QPixmap,
     QShowEvent,
 )
 from PySide6.QtCore import (
     Qt,
+    QByteArray,
     QPoint,
     QSize,
     QUrl,
@@ -42,6 +48,7 @@ from PySide6.QtCore import (
     QTimer,
     QThread,
 )
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtSvgWidgets import QSvgWidget
 
 from ai_client import (
@@ -52,14 +59,14 @@ from ai_client import (
     save_history,
     save_memory,
 )
-from runtime import resource_path
+from runtime import data_path, resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
+from svg_art import asked_to_draw, draw_for
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
-import re
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
-SVG_DIR = Path("svg_drawings")
+SVG_DIR = data_path("svg_drawings")
 
 
 def asset_path(relative):
@@ -189,6 +196,10 @@ class MainWindow(QMainWindow):
         self._bubble_timer.setSingleShot(True)
         self._bubble_timer.timeout.connect(self.hide_reply)
 
+        self._svg_timer = QTimer(self)
+        self._svg_timer.setSingleShot(True)
+        self._svg_timer.timeout.connect(self._hide_svg)
+
         self.setup_tray()
 
     def showEvent(self, event: QShowEvent):
@@ -296,10 +307,12 @@ class MainWindow(QMainWindow):
 
         # Handle SVG drawing
         svg_code = result.get("svg")
+        if svg_code and not self._svg_is_valid(svg_code):
+            svg_code = None
         if svg_code:
             self._show_svg(svg_code)
-        elif self._user_asked_to_draw(self._last_user_text or ""):
-            self._generate_fallback_svg(self._last_user_text or "")
+        elif asked_to_draw(self._last_user_text or ""):
+            self._show_svg(draw_for(self._last_user_text or ""))
 
         if not text:
             self._bubble_timer.start(1500)
@@ -436,6 +449,10 @@ class MainWindow(QMainWindow):
             self.raise_()
             self.activateWindow()
 
+    def _svg_is_valid(self, svg_code):
+        renderer = QSvgRenderer(QByteArray(svg_code.encode("utf-8")))
+        return renderer.isValid()
+
     def _show_svg(self, svg_code):
         """Display an SVG drawing in the main window."""
         self.gif_label.hide()
@@ -448,61 +465,77 @@ class MainWindow(QMainWindow):
             svg_file.write_text(svg_code, encoding="utf-8")
         except OSError:
             pass
-        # Auto-hide SVG after 8 seconds and return to gif
-        QTimer.singleShot(8000, self._hide_svg)
-
-    def _generate_fallback_svg(self, text):
-        """Generate a simple cat face SVG when model doesn't provide one."""
-        svg = """<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="100" cy="90" r="60" fill="#fff" stroke="#000" stroke-width="3"/>
-  <circle cx="75" cy="75" r="12" fill="#000"/>
-  <circle cx="125" cy="75" r="12" fill="#000"/>
-  <path d="M 85 110 Q 100 125 115 110" fill="none" stroke="#000" stroke-width="3"/>
-  <line x1="50" y1="60" x2="30" y2="50" stroke="#000" stroke-width="2"/>
-  <line x1="55" y1="70" x2="35" y2="65" stroke="#000" stroke-width="2"/>
-  <line x1="60" y1="80" x2="40" y2="80" stroke="#000" stroke-width="2"/>
-  <line x1="150" y1="60" x2="170" y2="50" stroke="#000" stroke-width="2"/>
-  <line x1="145" y1="70" x2="165" y2="65" stroke="#000" stroke-width="2"/>
-  <line x1="140" y1="80" x2="160" y2="80" stroke="#000" stroke-width="2"/>
-</svg>"""
-        self._show_svg(svg)
-
-    def _user_asked_to_draw(self, user_text):
-        """Check if the user is asking Milky to draw something."""
-        draw_keywords = [
-            "нарисуй", "нарисовать", "рисунок", "рисунок",
-            "draw", "drawing", "draw a", "paint", "sketch",
-            "создай картинку", "сделай картинку", "изобрази",
-            "котик", "кошка", "кот", "cat", "кит", "китенок",
-            "котёнок", "котенок",
-        ]
-        text_lower = user_text.lower()
-        return any(kw in text_lower for kw in draw_keywords)
+        # Auto-hide SVG after 12 seconds and return to gif
+        self._svg_timer.start(12000)
 
     def _hide_svg(self):
+        self._svg_timer.stop()
         self.svg_widget.hide()
         self.gif_label.show()
 
     def show_svg_gallery(self):
-        """Open a window showing all saved SVG drawings."""
-        if hasattr(self, "_svg_gallery") and self._svg_gallery is not None:
+        """Open a scrollable gallery with previews of every drawing."""
+        if self._svg_gallery is not None:
             self._svg_gallery.close()
-        self._svg_gallery = QWidget(self, Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
-        self._svg_gallery.setWindowTitle("Milky's SVG Drawings")
-        self._svg_gallery.resize(400, 300)
-        layout = QVBoxLayout(self._svg_gallery)
-        svg_files = sorted(SVG_DIR.glob("*.svg"))
+            self._svg_gallery = None
+
+        gallery = QWidget(
+            self,
+            Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint,
+        )
+        gallery.setWindowTitle("Milky's SVG Drawings")
+        gallery.resize(560, 480)
+        outer = QVBoxLayout(gallery)
+
+        scroll = QScrollArea(gallery)
+        scroll.setWidgetResizable(True)
+        host = QWidget()
+        grid = QGridLayout(host)
+        grid.setSpacing(10)
+
+        svg_files = sorted(
+            SVG_DIR.glob("*.svg"),
+            key=lambda item: item.stat().st_mtime if item.exists() else 0,
+            reverse=True,
+        )
         if not svg_files:
-            layout.addWidget(QLabel("No drawings yet. Ask Milky to draw something!"))
+            grid.addWidget(
+                QLabel("No drawings yet. Ask Milky to draw something!"),
+                0,
+                0,
+            )
         else:
-            for svg_file in svg_files:
-                btn = QPushButton(svg_file.name)
-                btn.clicked.connect(lambda checked, f=svg_file: self._load_svg_file(f))
-                layout.addWidget(btn)
+            for index, svg_file in enumerate(svg_files):
+                button = QToolButton()
+                button.setToolButtonStyle(
+                    Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+                )
+                button.setIcon(self._svg_thumbnail(svg_file))
+                button.setIconSize(QSize(104, 104))
+                button.setText(svg_file.stem)
+                button.setToolTip(svg_file.name)
+                button.clicked.connect(
+                    lambda checked=False, path=svg_file: self._load_svg_file(path)
+                )
+                grid.addWidget(button, index // 4, index % 4)
+
+        scroll.setWidget(host)
+        outer.addWidget(scroll)
         close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self._svg_gallery.close)
-        layout.addWidget(close_btn)
-        self._svg_gallery.show()
+        close_btn.clicked.connect(gallery.close)
+        outer.addWidget(close_btn)
+
+        self._svg_gallery = gallery
+        gallery.show()
+
+    def _svg_thumbnail(self, svg_file):
+        renderer = QSvgRenderer(str(svg_file))
+        pixmap = QPixmap(104, 104)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
 
     def _load_svg_file(self, svg_file):
         try:
@@ -510,8 +543,9 @@ class MainWindow(QMainWindow):
             self._show_svg(svg_code)
         except OSError:
             pass
-        if hasattr(self, "_svg_gallery") and self._svg_gallery is not None:
+        if self._svg_gallery is not None:
             self._svg_gallery.close()
+            self._svg_gallery = None
 
     def open_settings(self):
         dialog = SettingsDialog(self._settings, self)
