@@ -7,6 +7,7 @@ import requests
 from dotenv import load_dotenv
 
 from runtime import data_path
+from svg_art import SELFIE_PATHS, is_plain_selfie, wants_selfie
 
 load_dotenv(data_path(".env"))
 
@@ -123,8 +124,9 @@ Drawing (SVG):
 - Use a viewBox like "0 0 200 200" (or larger if the scene needs room) and bright friendly colors.
 - Use <defs> for gradients, semi-transparent ellipses for soft shadows, rounded lines, and small details such as eye highlights, blush or texture.
 - Keep the markup reasonably compact, but never return just a few bare outlines.
-- You have an official self-portrait: white line art of your cat-like face on a dark purple background. If the user asks you to draw yourself, a selfie or your portrait, leave svg empty and say in text that you are showing your portrait — the app attaches the official artwork automatically.
-- Do not copy or invent a different self-portrait. For every other subject, generate your own original SVG code.
+- You have an official self-portrait: white line art of your cat-like face on a warm portrait background. If the user asks for a plain selfie or portrait ("нарисуй себя", "селфи", "draw yourself"), leave svg empty and say in text that you are showing your portrait — the app attaches the official artwork automatically.
+- If the user asks for a scene with you (for example "нарисуй себя в космосе", "draw yourself with a cat"), draw the full scene and reuse the official face paths from the reference message at a suitable scale and position. Add the requested background and objects; do not return only your face. Adapt the face stroke color to the scene (white on dark backgrounds, dark on light ones) so it stays visible.
+- Do not invent a different self-portrait. For every other subject, generate your own original SVG code.
 - In text, briefly say what you drew.
 
 Rules:
@@ -134,6 +136,15 @@ Rules:
 - The emotion must match the meaning and tone of the reply.
 - If a question is unclear, use confused and ask for clarification.
 """
+
+SELFIE_REFERENCE = (
+    "\nSelf-portrait reference — Milky's official line art "
+    "(viewBox 0 0 640 640, white strokes, width 17, round caps and joins):\n"
+    + SELFIE_PATHS
+    + "\nWhen drawing a scene with Milky, reuse these face paths, scale and "
+    "place them to fit the scene, and add the requested background and "
+    "objects around her. Do not return only the face.\n"
+)
 
 TOOLS = [
     {
@@ -291,7 +302,10 @@ def clean_reply(text):
 
 
 def build_messages(text, history=None, memory=None):
-    messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_block(memory)}]
+    system = SYSTEM_PROMPT + memory_block(memory)
+    if wants_selfie(text) and not is_plain_selfie(text):
+        system += SELFIE_REFERENCE
+    messages = [{"role": "system", "content": system}]
     for item in (history or [])[-HISTORY_LIMIT:]:
         role = item.get("role")
         content = str(item.get("content", "")).strip()

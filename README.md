@@ -16,8 +16,8 @@ An animated AI desktop pet: a transparent window, emotion animations, user memor
 - Request caching for OpenRouter.
 - Opening links when the user explicitly asks.
 - Detailed SVG drawings: when asked to draw something, Milky saves a polished SVG illustration to `svg_drawings/`, plays a drawing animation, and shows a notification above her face.
-- Official self-portrait: ask her to draw herself, a selfie or her portrait and she uses her line-art artwork.
-- SVG selfie and drawing gallery from the tray menu, with sharp click-to-enlarge previews.
+- Official self-portrait: plain selfie requests use her line-art portrait; scene requests such as **нарисуй себя в космосе** draw the full scene.
+- SVG drawing gallery from the tray menu, with sharp click-to-enlarge previews and a Delete button for each drawing.
 - Text-to-speech replies through a Milka TTS server or Groq, with configurable endpoint and voice.
 - System tray icon and context menu.
 - Linux and Windows installers with optional autostart.
@@ -169,12 +169,13 @@ python main.py
 - Drag — move the pet.
 - Enter — send a message.
 - Esc — close the input field.
-- Right click — open the context menu (Settings, Selfie, Show SVG gallery, Quit).
+- Right click — open the context menu (Settings, Show / Hide, Quit).
+- Tray menu — Show / Hide, Settings, Show SVG gallery, Quit.
 - Double-click the tray icon — show or hide the window.
 
-Ask Milky to **draw a cat**, **draw a sun**, **нарисуй котика** or **нарисуй цветок**. Milky keeps her face animation, plays `milka_drawing.gif` and shows a **«Новый рисунок в галерее!»** notification above her. The drawing is saved in `svg_drawings/`; click the notification or open the tray menu → **Show SVG gallery** to browse sharp previews and click any drawing to enlarge it.
+Ask Milky to **draw a cat**, **draw a sun**, **нарисуй котика** or **нарисуй цветок**. Milky keeps her face animation, plays `milka_drawing.gif` and shows a **«Новый рисунок в галерее!»** notification above her. The drawing is saved in `svg_drawings/`; click the notification or open the tray menu → **Show SVG gallery** to browse sharp previews and click any drawing to enlarge it. Each drawing in the gallery has a **Delete** button.
 
-Ask **нарисуй себя**, **селфи**, **автопортрет** or **draw yourself** and she will use her official line-art self-portrait instead of generating a new one.
+Ask **нарисуй себя**, **селфи**, **автопортрет** or **draw yourself** and she will use her official line-art self-portrait. If you ask for a scene with her, such as **нарисуй себя в космосе** or **draw yourself with a cat**, she draws the full scene instead of only the portrait.
 
 ## Autostart
 

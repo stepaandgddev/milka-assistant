@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSystemTrayIcon,
@@ -66,7 +67,7 @@ from ai_client import (
 from runtime import data_path, resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
-from svg_art import asked_to_draw, draw_for, wants_selfie
+from svg_art import asked_to_draw, draw_for, is_plain_selfie, wants_selfie
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
@@ -186,7 +187,6 @@ class MainWindow(QMainWindow):
         self._tts_player = AudioPlayer(self)
         self._tts_settings = self._settings.get("tts") or {}
         self._tts_worker = None
-        self._selfie_window = None
         self._svg_gallery = None
         self._svg_gallery_placed = False
         self._svg_grid = None
@@ -319,7 +319,9 @@ class MainWindow(QMainWindow):
         svg_code = result.get("svg")
         if svg_code and not self._svg_is_valid(svg_code):
             svg_code = None
-        if wants_selfie(request) or (not svg_code and asked_to_draw(request)):
+        if wants_selfie(request) and is_plain_selfie(request):
+            svg_code = draw_for(request)
+        elif not svg_code and asked_to_draw(request):
             svg_code = draw_for(request)
         if svg_code and self._save_drawing(svg_code):
             self._play_drawing_animation()
@@ -370,37 +372,6 @@ class MainWindow(QMainWindow):
         if self._current_gif != "milka_drawing.gif":
             self.set_gif("milka_idle.gif")
 
-    def show_selfie(self):
-        """Show Milky's selfie (milka_idle.svg) in a small overlay window."""
-        if self._selfie_window is not None and self._selfie_window.isVisible():
-            self._selfie_window.hide()
-            self._selfie_window = None
-            return
-
-        self._selfie_window = QWidget(self, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        self._selfie_window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self._selfie_window.resize(300, 300)
-
-        layout = QVBoxLayout(self._selfie_window)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        svg = QSvgWidget(asset_path("milka_idle.svg"))
-        svg.setFixedSize(300, 300)
-        layout.addWidget(svg)
-
-        # Position near the main window
-        main_pos = self.frameGeometry().topLeft()
-        self._selfie_window.move(main_pos.x() - 320, main_pos.y())
-
-        self._selfie_window.show()
-        # Auto-hide after 5 seconds
-        QTimer.singleShot(5000, self._hide_selfie)
-
-    def _hide_selfie(self):
-        if self._selfie_window is not None:
-            self._selfie_window.hide()
-            self._selfie_window = None
-
     def setup_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
@@ -411,8 +382,6 @@ class MainWindow(QMainWindow):
         toggle_action.triggered.connect(self.toggle_window)
         settings_action = menu.addAction("Settings...")
         settings_action.triggered.connect(self.open_settings)
-        selfie_action = menu.addAction("Selfie")
-        selfie_action.triggered.connect(self.show_selfie)
         svg_action = menu.addAction("Show SVG gallery")
         svg_action.triggered.connect(self.show_svg_gallery)
         menu.addSeparator()
@@ -631,7 +600,7 @@ class MainWindow(QMainWindow):
         gallery.resize(680, 560)
 
         outer = QVBoxLayout(gallery)
-        hint = QLabel("Click a drawing to view it larger.")
+        hint = QLabel("Click a drawing to view it larger. Use Delete to remove it.")
         hint.setStyleSheet("color: #666;")
         outer.addWidget(hint)
 
@@ -678,7 +647,12 @@ class MainWindow(QMainWindow):
             return
 
         for index, svg_file in enumerate(svg_files):
-            button = QToolButton()
+            tile = QWidget()
+            tile_layout = QVBoxLayout(tile)
+            tile_layout.setContentsMargins(0, 0, 0, 0)
+            tile_layout.setSpacing(2)
+
+            button = QToolButton(tile)
             button.setToolButtonStyle(
                 Qt.ToolButtonStyle.ToolButtonTextUnderIcon
             )
@@ -689,7 +663,58 @@ class MainWindow(QMainWindow):
             button.clicked.connect(
                 lambda checked=False, path=svg_file: self._show_svg_preview(path)
             )
-            grid.addWidget(button, index // 4, index % 4)
+            tile_layout.addWidget(button)
+
+            delete_btn = QPushButton("Delete", tile)
+            delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            delete_btn.setToolTip(f"Delete {svg_file.name}")
+            delete_btn.setStyleSheet(
+                "QPushButton {"
+                "  border: none;"
+                "  background: transparent;"
+                "  color: #b04a6a;"
+                "  font-size: 11px;"
+                "  padding: 0;"
+                "}"
+                "QPushButton:hover { color: #d21f4f; }"
+            )
+            delete_btn.clicked.connect(
+                lambda checked=False, path=svg_file: self._delete_svg(path)
+            )
+            tile_layout.addWidget(
+                delete_btn, alignment=Qt.AlignmentFlag.AlignHCenter
+            )
+
+            grid.addWidget(tile, index // 4, index % 4)
+
+    def _delete_svg(self, svg_file):
+        gallery = self._svg_gallery or self
+        answer = QMessageBox.question(
+            gallery,
+            "Delete drawing",
+            f"Delete {svg_file.name}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            svg_file.unlink()
+        except OSError as error:
+            QMessageBox.warning(
+                gallery,
+                "Delete drawing",
+                f"Could not delete {svg_file.name}:\n{error}",
+            )
+            return
+        if (
+            self._svg_preview is not None
+            and getattr(self._svg_preview, "_svg_path", None) == svg_file
+        ):
+            self._svg_preview.close()
+            self._svg_preview.deleteLater()
+            self._svg_preview = None
+        self._populate_svg_gallery()
 
     def _refresh_svg_gallery(self):
         if self._svg_gallery is not None and self._svg_gallery.isVisible():
@@ -710,6 +735,7 @@ class MainWindow(QMainWindow):
     def _show_svg_preview(self, svg_file):
         if self._svg_preview is not None:
             self._svg_preview.close()
+            self._svg_preview.deleteLater()
             self._svg_preview = None
 
         preview = QWidget(
@@ -734,6 +760,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(close_btn)
 
         self._svg_preview = preview
+        preview._svg_path = svg_file
         self._center_on_screen(preview)
         preview.show()
         preview.raise_()
@@ -786,10 +813,6 @@ class MainWindow(QMainWindow):
         self._drawing_timer.stop()
         self._toast_timer.stop()
         self._hide_drawing_toast(immediate=True)
-        # Close selfie window
-        if self._selfie_window is not None:
-            self._selfie_window.close()
-            self._selfie_window = None
         # Close drawing preview and gallery
         if self._svg_preview is not None:
             self._svg_preview.close()

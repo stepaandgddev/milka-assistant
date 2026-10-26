@@ -758,42 +758,206 @@ DEFAULT = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
   <circle cx="154" cy="164" r="2" fill="#ffd94d" opacity="0.8"/>
 </svg>"""
 
-# Official self-portrait based on the user's milka_idle.svg line art.
-# A dark background is baked in so the white strokes stay visible in the gallery.
-SELFIE = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
+SPACE = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="spSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#080d22"/>
+      <stop offset="55%" stop-color="#1a1a46"/>
+      <stop offset="100%" stop-color="#33245c"/>
+    </linearGradient>
+    <radialGradient id="spPlanet" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffe39a"/>
+      <stop offset="55%" stop-color="#f2a44e"/>
+      <stop offset="100%" stop-color="#a94f2a"/>
+    </radialGradient>
+    <linearGradient id="spRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd7a8"/>
+      <stop offset="100%" stop-color="#8a4f7a"/>
+    </linearGradient>
+    <radialGradient id="spGlow">
+      <stop offset="0%" stop-color="#8ad8ff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#8ad8ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spRocket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f7ff"/>
+      <stop offset="100%" stop-color="#9fb3d9"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="200" fill="url(#spSky)"/>
+  <circle cx="154" cy="54" r="44" fill="url(#spGlow)"/>
+  <g fill="#ffffff">
+    <circle cx="22" cy="28" r="1.4" opacity="0.9"/>
+    <circle cx="58" cy="18" r="1" opacity="0.7"/>
+    <circle cx="92" cy="34" r="1.6" opacity="0.9"/>
+    <circle cx="118" cy="20" r="1.1" opacity="0.75"/>
+    <circle cx="178" cy="26" r="1.3" opacity="0.8"/>
+    <circle cx="190" cy="90" r="1.1" opacity="0.7"/>
+    <circle cx="24" cy="86" r="1.2" opacity="0.75"/>
+    <circle cx="46" cy="120" r="1.5" opacity="0.85"/>
+    <circle cx="102" cy="104" r="1" opacity="0.65"/>
+    <circle cx="170" cy="150" r="1.2" opacity="0.75"/>
+    <circle cx="74" cy="180" r="1.1" opacity="0.65"/>
+    <circle cx="132" cy="182" r="1.3" opacity="0.7"/>
+  </g>
+  <g fill="#fff3c4">
+    <path d="M36 52 l2 5.2 5.2 2 -5.2 2 -2 5.2 -2 -5.2 -5.2 -2 5.2 -2 z"/>
+    <path d="M150 118 l1.8 4.7 4.7 1.8 -4.7 1.8 -1.8 4.7 -1.8 -4.7 -4.7 -1.8 4.7 -1.8 z" opacity="0.85"/>
+    <path d="M96 148 l1.4 3.7 3.7 1.4 -3.7 1.4 -1.4 3.7 -1.4 -3.7 -3.7 -1.4 3.7 -1.4 z" opacity="0.75"/>
+  </g>
+  <circle cx="152" cy="58" r="27" fill="url(#spPlanet)"/>
+  <path d="M130 42 q14 -12 32 -7" fill="none" stroke="#fff0c8"
+        stroke-width="2" opacity="0.35" stroke-linecap="round"/>
+  <ellipse cx="152" cy="60" rx="45" ry="11" fill="none"
+           stroke="url(#spRing)" stroke-width="5" opacity="0.85"
+           transform="rotate(-18 152 60)"/>
+  <ellipse cx="152" cy="60" rx="45" ry="11" fill="none"
+           stroke="#2b1b3f" stroke-width="1.4" opacity="0.35"
+           transform="rotate(-18 152 60)"/>
+  <circle cx="42" cy="154" r="13" fill="#c9d7f2"/>
+  <circle cx="38" cy="150" r="4" fill="#9fb0d4" opacity="0.6"/>
+  <circle cx="47" cy="160" r="2.5" fill="#9fb0d4" opacity="0.5"/>
+  <g transform="translate(82 100) rotate(-28)">
+    <path d="M0 34 q-9 -10 -8 -24 q1 -16 12 -26 q2 -2 4 0 q11 10 12 26 q1 14 -8 24 z"
+          fill="url(#spRocket)" stroke="#61789e" stroke-width="1.6"/>
+    <path d="M0 34 l-12 10 q10 1 12 -4 z" fill="#ff7a9e"
+          stroke="#b74a6c" stroke-width="1.2"/>
+    <path d="M0 34 l12 10 q-10 1 -12 -4 z" fill="#ff7a9e"
+          stroke="#b74a6c" stroke-width="1.2"/>
+    <circle cx="0" cy="2" r="5.5" fill="#6fc8ff"
+            stroke="#3b6f9e" stroke-width="1.4"/>
+    <circle cx="-1.5" cy="0.5" r="1.6" fill="#ffffff" opacity="0.85"/>
+    <path d="M0 34 q-4 8 0 14 q4 -6 0 -14 z" fill="#ffcf6b"/>
+    <path d="M0 39 q-2 5 0 9 q2 -4 0 -9 z" fill="#ff8a3d"/>
+    <path d="M-5 8 h-4 M5 8 h4" stroke="#61789e"
+          stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <path d="M20 176 q24 -10 46 -6" fill="none" stroke="#9fe6ff"
+        stroke-width="2.2" opacity="0.6" stroke-linecap="round"/>
+  <circle cx="16" cy="178" r="3" fill="#c8f4ff"/>
+</svg>"""
+
+# Official self-portrait line art from the user's milka_idle.svg.
+SELFIE_PATHS = """  <g stroke="white" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M284 273C284 218 251 189 207 189C159 189 128 227 128 281C128 333 158 370 200 370C248 370 284 330 284 273Z"/>
+    <path d="M132 212L97 179"/>
+    <path d="M118 246L75 227"/>
+    <path d="M117 279L63 274"/>
+    <path d="M356 273C356 218 389 189 433 189C481 189 512 227 512 281C512 333 482 370 440 370C392 370 356 330 356 273Z"/>
+    <path d="M508 212L543 179"/>
+    <path d="M522 246L565 227"/>
+    <path d="M523 279L577 274"/>
+    <path d="M247 427C272 451 299 461 321 461C344 461 370 451 394 427"/>
+  </g>"""
+
+# A warm portrait background keeps the white line art visible in the gallery
+# without making a plain selfie look like a space scene.
+SELFIE = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
      viewBox="0 0 640 640" fill="none">
   <defs>
-    <radialGradient id="selfieBg" cx="50%" cy="40%" r="72%">
-      <stop offset="0%" stop-color="#3b3158"/>
-      <stop offset="60%" stop-color="#241d38"/>
-      <stop offset="100%" stop-color="#141020"/>
+    <radialGradient id="selfieBg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#6b3a55"/>
+      <stop offset="55%" stop-color="#3a2233"/>
+      <stop offset="100%" stop-color="#1d1119"/>
     </radialGradient>
-    <radialGradient id="selfieGlow" cx="50%" cy="45%" r="50%">
-      <stop offset="0%" stop-color="#ff9ecb" stop-opacity="0.30"/>
-      <stop offset="100%" stop-color="#ff9ecb" stop-opacity="0"/>
+    <radialGradient id="selfieGlow" cx="50%" cy="42%" r="48%">
+      <stop offset="0%" stop-color="#ffb7d5" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#ffb7d5" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="640" height="640" fill="url(#selfieBg)"/>
   <circle cx="320" cy="310" r="250" fill="url(#selfieGlow)"/>
-  <path d="M284 273C284 218 251 189 207 189C159 189 128 227 128 281C128 333 158 370 200 370C248 370 284 330 284 273Z" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M132 212L97 179" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M118 246L75 227" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M117 279L63 274" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M356 273C356 218 389 189 433 189C481 189 512 227 512 281C512 333 482 370 440 370C392 370 356 330 356 273Z" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M508 212L543 179" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M522 246L565 227" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M523 279L577 274" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <path d="M247 427C272 451 299 461 321 461C344 461 370 451 394 427" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
-  <g fill="#ff9ecb">
-    <path d="M96 96 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 z" opacity="0.9"/>
-    <path d="M548 118 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2 z" opacity="0.8"/>
-    <path d="M520 500 l2.4 6.6 6.6 2.4 -6.6 2.4 -2.4 6.6 -2.4 -6.6 -6.6 -2.4 6.6 -2.4 z" opacity="0.7"/>
+  <rect x="18" y="18" width="604" height="604" rx="28"
+        fill="none" stroke="#ffb7d5" stroke-opacity="0.16" stroke-width="2"/>
+  <g fill="#ffd9e8" opacity="0.16">
+    <circle cx="112" cy="150" r="6"/>
+    <circle cx="520" cy="188" r="9"/>
+    <circle cx="158" cy="482" r="8"/>
+    <circle cx="482" cy="470" r="5"/>
   </g>
-  <g fill="#ffffff" opacity="0.5">
-    <circle cx="150" cy="120" r="2"/>
-    <circle cx="500" cy="320" r="2.4"/>
-    <circle cx="120" cy="430" r="1.8"/>
-    <circle cx="430" cy="120" r="1.6"/>
+{SELFIE_PATHS}
+</svg>"""
+
+SELFIE_SPACE = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
+     viewBox="0 0 640 640">
+  <defs>
+    <linearGradient id="ssSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#070b20"/>
+      <stop offset="55%" stop-color="#1b1745"/>
+      <stop offset="100%" stop-color="#34235e"/>
+    </linearGradient>
+    <radialGradient id="ssGlow" cx="50%" cy="45%" r="46%">
+      <stop offset="0%" stop-color="#ff9ecb" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ff9ecb" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ssPlanet" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffe39a"/>
+      <stop offset="55%" stop-color="#f2a44e"/>
+      <stop offset="100%" stop-color="#a94f2a"/>
+    </radialGradient>
+    <linearGradient id="ssRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd7a8"/>
+      <stop offset="100%" stop-color="#8a4f7a"/>
+    </linearGradient>
+    <linearGradient id="ssRocket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4f7ff"/>
+      <stop offset="100%" stop-color="#9fb3d9"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#ssSky)"/>
+  <circle cx="320" cy="330" r="290" fill="url(#ssGlow)"/>
+  <g fill="#ffffff">
+    <circle cx="62" cy="82" r="2.4" opacity="0.9"/>
+    <circle cx="138" cy="56" r="1.6" opacity="0.7"/>
+    <circle cx="248" cy="86" r="2.2" opacity="0.85"/>
+    <circle cx="356" cy="52" r="1.8" opacity="0.75"/>
+    <circle cx="452" cy="86" r="2.6" opacity="0.9"/>
+    <circle cx="588" cy="232" r="2" opacity="0.8"/>
+    <circle cx="74" cy="302" r="2.2" opacity="0.75"/>
+    <circle cx="168" cy="198" r="1.6" opacity="0.65"/>
+    <circle cx="322" cy="590" r="2" opacity="0.75"/>
+    <circle cx="420" cy="566" r="1.8" opacity="0.7"/>
+    <circle cx="606" cy="420" r="2.2" opacity="0.8"/>
+    <circle cx="36" cy="430" r="2" opacity="0.7"/>
+  </g>
+  <g fill="#fff3c4">
+    <path d="M92 126 l3 7.8 7.8 3 -7.8 3 -3 7.8 -3 -7.8 -7.8 -3 7.8 -3 z"/>
+    <path d="M560 300 l2.4 6.2 6.2 2.4 -6.2 2.4 -2.4 6.2 -2.4 -6.2 -6.2 -2.4 6.2 -2.4 z" opacity="0.85"/>
+    <path d="M180 560 l2 5.2 5.2 2 -5.2 2 -2 5.2 -2 -5.2 -5.2 -2 5.2 -2 z" opacity="0.8"/>
+  </g>
+  <circle cx="516" cy="120" r="52" fill="url(#ssPlanet)"/>
+  <path d="M472 94 q28 -22 62 -12" fill="none" stroke="#fff0c8"
+        stroke-width="3" opacity="0.35" stroke-linecap="round"/>
+  <ellipse cx="516" cy="124" rx="88" ry="22" fill="none"
+           stroke="url(#ssRing)" stroke-width="9" opacity="0.85"
+           transform="rotate(-18 516 124)"/>
+  <ellipse cx="516" cy="124" rx="88" ry="22" fill="none"
+           stroke="#2b1b3f" stroke-width="2.5" opacity="0.35"
+           transform="rotate(-18 516 124)"/>
+  <circle cx="96" cy="500" r="30" fill="#c9d7f2"/>
+  <circle cx="87" cy="490" r="9" fill="#9fb0d4" opacity="0.6"/>
+  <circle cx="107" cy="512" r="5" fill="#9fb0d4" opacity="0.5"/>
+  <g transform="translate(520 500) rotate(-25) scale(1.2)">
+    <path d="M0 34 q-9 -10 -8 -24 q1 -16 12 -26 q2 -2 4 0 q11 10 12 26 q1 14 -8 24 z"
+          fill="url(#ssRocket)" stroke="#61789e" stroke-width="1.6"/>
+    <path d="M0 34 l-12 10 q10 1 12 -4 z" fill="#ff7a9e"
+          stroke="#b74a6c" stroke-width="1.2"/>
+    <path d="M0 34 l12 10 q-10 1 -12 -4 z" fill="#ff7a9e"
+          stroke="#b74a6c" stroke-width="1.2"/>
+    <circle cx="0" cy="2" r="5.5" fill="#6fc8ff"
+            stroke="#3b6f9e" stroke-width="1.4"/>
+    <circle cx="-1.5" cy="0.5" r="1.6" fill="#ffffff" opacity="0.85"/>
+    <path d="M0 34 q-4 8 0 14 q4 -6 0 -14 z" fill="#ffcf6b"/>
+    <path d="M0 39 q-2 5 0 9 q2 -4 0 -9 z" fill="#ff8a3d"/>
+    <path d="M-5 8 h-4 M5 8 h4" stroke="#61789e"
+          stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <path d="M58 210 q56 -24 108 -14" fill="none" stroke="#9fe6ff"
+        stroke-width="3" opacity="0.55" stroke-linecap="round"/>
+  <circle cx="48" cy="214" r="6" fill="#c8f4ff"/>
+  <circle cx="320" cy="345" r="205" fill="none" stroke="#ffb7d5"
+          stroke-opacity="0.14" stroke-width="2"/>
+  <g transform="translate(150 135) scale(0.65)">
+{SELFIE_PATHS}
   </g>
 </svg>"""
 
@@ -801,11 +965,19 @@ SELFIE = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
 # Matching
 # ---------------------------------------------------------------------------
 
+_SPACE_PATTERN = (
+    r"\bкосм(?:ос|оса|осу|осом|осе)\b|\bкосмическ\w*|"
+    r"\b(?:space|galaxy|cosmos|universe)\w*\b|"
+    r"\bпланет\w*|\b(?:planet|planets)\b"
+)
+_SPACE_RE = re.compile(_SPACE_PATTERN, re.IGNORECASE)
+
 _SUBJECTS = (
     ("cat", r"\bкот(?:ик\w*|[её]н\w*|ят\w*|ами|ах|а|у|ом|е|ы|ов)?\b|\bкошк\w*|\b(?:cat|kitten|kitty)\w*\b", CAT),
     ("dog", r"\bсобак\w*|\bсобач\w*|\bп[её]с(?:ик\w*|а|у|ом|е|ы|ов)?\b|\bщен(?:ок|к\w*)\b|\b(?:dog|puppy|pup)\w*\b", DOG),
     ("bunny", r"\bзай(?:чик\w*|ка|ке|ку|ком|цы|цев|чонок\w*)\b|\bзаяц\w*|\bкрол\w*|\b(?:bunny|rabbit|hare)\w*\b", BUNNY),
     ("snowman", r"\bснегов\w*|\b(?:snowman|snow\s?man)\w*\b", SNOWMAN),
+    ("space", _SPACE_PATTERN, SPACE),
     ("sun", r"\bсолн(?:це|ца|цу|цем|е|ышк\w*|ечн\w*)\b|\b(?:sun|sunshine|sunny)\w*\b", SUN),
     ("moon", r"\bлун(?:а|ы|е|у|ой|н\w*)\b|\bмесяц\w*|\b(?:moon|moonlight)\w*\b", MOON),
     ("star", r"\bзв[её]зд\w*|\b(?:star|stars)\w*\b", STAR),
@@ -828,7 +1000,8 @@ _DRAW_RE = re.compile(
     r"\bнарису\w*|\bнарисова\w*|\bрисун\w*|\bрисова\w*|\bизобраз\w*|"
     r"\b(?:draw|drawing|paint|painting|sketch|illustrate|illustration)\w*\b|"
     r"\b(?:picture|image|artwork)\b|\bкартин\w*|\bизображени\w*|"
-    r"\b(?:селфи|селфик|автопортрет)\w*\b|\bselfie\w*\b",
+    r"\b(?:селфи|селфик|автопортрет)\w*\b|\bselfie\w*\b|"
+    r"\bself[\s-]?portrait\w*\b",
     re.IGNORECASE,
 )
 
@@ -837,12 +1010,13 @@ _SELFIE_RE = re.compile(
     r"|\bпортрет\s+(?:себя|милк\w*)\b"
     r"|\b(?:мой|свой)\s+портрет\b"
     r"|\b(?:селфи|селфик|автопортрет)\w*\b"
-    r"|\b(?:покажи|показать)\s+себя\b"
+    r"|\b(?:показ\w*|покажи\w*|показать)\s+себя\b"
     r"|\b(?:draw|paint|sketch|illustrate)\s+(?:a\s+)?"
     r"(?:yourself|milky|selfie)\b"
     r"|\b(?:draw|paint|sketch|illustrate)\s+(?:a\s+)?"
     r"(?:picture|image|drawing|portrait)\s+of\s+(?:yourself|milky)\b"
-    r"|\bselfie\w*\b|\bself-portrait\w*\b",
+    r"|\b(?:picture|image|drawing|portrait)\s+of\s+(?:yourself|milky)\b"
+    r"|\bselfie\w*\b|\bself[\s-]?portrait\w*\b",
     re.IGNORECASE,
 )
 
@@ -855,6 +1029,31 @@ def asked_to_draw(text):
 def wants_selfie(text):
     """Return True when the user asks Milky to draw herself."""
     return bool(text) and _SELFIE_RE.search(text) is not None
+
+
+_SELFIE_FILLER_RE = re.compile(
+    r"\b(?:"
+    r"нарису\w*|нарисова\w*|изобраз\w*|показ\w*|показать|сдела\w*|"
+    r"draw\w*|paint\w*|sketch\w*|illustrate\w*|mak\w*|tak\w*|"
+    r"a|an|the|me|my|of|in|with|as|for|please|now|"
+    r"себя|себе|милк\w*|yourself|milky|self|selfie|self-portrait|"
+    r"селфи\w*|автопортрет\w*|портрет\w*|portrait\w*|"
+    r"picture|image|drawing|картин\w*|изображени\w*|"
+    r"мне|меня|мой|моя|мою|свой|своя|свою|пожалуйста|давай|ну|же|"
+    r"в|во|на|с|со|как|"
+    r"милая|милый|красиво|красивый|pretty|beautiful"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def is_plain_selfie(text):
+    """Return True for a bare self-portrait request without a scene."""
+    if not wants_selfie(text):
+        return False
+    remainder = _SELFIE_FILLER_RE.sub(" ", text)
+    remainder = re.sub(r"[^\w]+", "", remainder, flags=re.UNICODE)
+    return not remainder
 
 
 def subject_for(text):
@@ -874,6 +1073,8 @@ def draw_for(text):
     if not text:
         return DEFAULT
     if wants_selfie(text):
+        if not is_plain_selfie(text) and _SPACE_RE.search(text):
+            return SELFIE_SPACE
         return SELFIE
     for _name, pattern, svg in _SUBJECT_PATTERNS:
         if pattern.search(text):
