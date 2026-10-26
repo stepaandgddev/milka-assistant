@@ -758,6 +758,45 @@ DEFAULT = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
   <circle cx="154" cy="164" r="2" fill="#ffd94d" opacity="0.8"/>
 </svg>"""
 
+# Official self-portrait based on the user's milka_idle.svg line art.
+# A dark background is baked in so the white strokes stay visible in the gallery.
+SELFIE = """<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640"
+     viewBox="0 0 640 640" fill="none">
+  <defs>
+    <radialGradient id="selfieBg" cx="50%" cy="40%" r="72%">
+      <stop offset="0%" stop-color="#3b3158"/>
+      <stop offset="60%" stop-color="#241d38"/>
+      <stop offset="100%" stop-color="#141020"/>
+    </radialGradient>
+    <radialGradient id="selfieGlow" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#ff9ecb" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#ff9ecb" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="640" fill="url(#selfieBg)"/>
+  <circle cx="320" cy="310" r="250" fill="url(#selfieGlow)"/>
+  <path d="M284 273C284 218 251 189 207 189C159 189 128 227 128 281C128 333 158 370 200 370C248 370 284 330 284 273Z" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M132 212L97 179" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M118 246L75 227" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M117 279L63 274" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M356 273C356 218 389 189 433 189C481 189 512 227 512 281C512 333 482 370 440 370C392 370 356 330 356 273Z" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M508 212L543 179" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M522 246L565 227" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M523 279L577 274" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <path d="M247 427C272 451 299 461 321 461C344 461 370 451 394 427" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" stroke="white"/>
+  <g fill="#ff9ecb">
+    <path d="M96 96 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 z" opacity="0.9"/>
+    <path d="M548 118 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2 z" opacity="0.8"/>
+    <path d="M520 500 l2.4 6.6 6.6 2.4 -6.6 2.4 -2.4 6.6 -2.4 -6.6 -6.6 -2.4 6.6 -2.4 z" opacity="0.7"/>
+  </g>
+  <g fill="#ffffff" opacity="0.5">
+    <circle cx="150" cy="120" r="2"/>
+    <circle cx="500" cy="320" r="2.4"/>
+    <circle cx="120" cy="430" r="1.8"/>
+    <circle cx="430" cy="120" r="1.6"/>
+  </g>
+</svg>"""
+
 # ---------------------------------------------------------------------------
 # Matching
 # ---------------------------------------------------------------------------
@@ -788,7 +827,22 @@ _SUBJECT_PATTERNS = tuple(
 _DRAW_RE = re.compile(
     r"\bнарису\w*|\bнарисова\w*|\bрисун\w*|\bрисова\w*|\bизобраз\w*|"
     r"\b(?:draw|drawing|paint|painting|sketch|illustrate|illustration)\w*\b|"
-    r"\b(?:picture|image|artwork)\b|\bкартин\w*|\bизображени\w*",
+    r"\b(?:picture|image|artwork)\b|\bкартин\w*|\bизображени\w*|"
+    r"\b(?:селфи|селфик|автопортрет)\w*\b|\bselfie\w*\b",
+    re.IGNORECASE,
+)
+
+_SELFIE_RE = re.compile(
+    r"\b(?:нарису\w*|нарисова\w*|изобраз\w*)\s+(?:мне\s+)?(?:себя|милк\w*)\b"
+    r"|\bпортрет\s+(?:себя|милк\w*)\b"
+    r"|\b(?:мой|свой)\s+портрет\b"
+    r"|\b(?:селфи|селфик|автопортрет)\w*\b"
+    r"|\b(?:покажи|показать)\s+себя\b"
+    r"|\b(?:draw|paint|sketch|illustrate)\s+(?:a\s+)?"
+    r"(?:yourself|milky|selfie)\b"
+    r"|\b(?:draw|paint|sketch|illustrate)\s+(?:a\s+)?"
+    r"(?:picture|image|drawing|portrait)\s+of\s+(?:yourself|milky)\b"
+    r"|\bselfie\w*\b|\bself-portrait\w*\b",
     re.IGNORECASE,
 )
 
@@ -798,10 +852,17 @@ def asked_to_draw(text):
     return bool(text) and _DRAW_RE.search(text) is not None
 
 
+def wants_selfie(text):
+    """Return True when the user asks Milky to draw herself."""
+    return bool(text) and _SELFIE_RE.search(text) is not None
+
+
 def subject_for(text):
     """Return the artwork key that matches the request, or None."""
     if not text:
         return None
+    if wants_selfie(text):
+        return "selfie"
     for name, pattern, _svg in _SUBJECT_PATTERNS:
         if pattern.search(text):
             return name
@@ -812,6 +873,8 @@ def draw_for(text):
     """Pick the best detailed artwork for the user's request."""
     if not text:
         return DEFAULT
+    if wants_selfie(text):
+        return SELFIE
     for _name, pattern, svg in _SUBJECT_PATTERNS:
         if pattern.search(text):
             return svg

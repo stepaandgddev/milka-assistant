@@ -66,7 +66,7 @@ from ai_client import (
 from runtime import data_path, resource_path
 from settings_dialog import SettingsDialog
 from settings_store import active_provider, load_settings
-from svg_art import asked_to_draw, draw_for
+from svg_art import asked_to_draw, draw_for, wants_selfie
 from tts import TtsWorker as TtsSynthesisWorker, AudioPlayer
 GIF_SIZE = 200
 HISTORY_LIMIT = 100
@@ -315,11 +315,12 @@ class MainWindow(QMainWindow):
         self.set_gif(self._reply_gif)
 
         # Save drawings to the gallery instead of replacing Milky's face.
+        request = self._last_user_text or ""
         svg_code = result.get("svg")
         if svg_code and not self._svg_is_valid(svg_code):
             svg_code = None
-        if not svg_code and asked_to_draw(self._last_user_text or ""):
-            svg_code = draw_for(self._last_user_text or "")
+        if wants_selfie(request) or (not svg_code and asked_to_draw(request)):
+            svg_code = draw_for(request)
         if svg_code and self._save_drawing(svg_code):
             self._play_drawing_animation()
             self._show_drawing_toast()
