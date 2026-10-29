@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="Milky"
-SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_DIR="${MILKY_INSTALL_DIR:-$HOME/.local/share/milky}"
 BIN_DIR="${MILKY_BIN_DIR:-$HOME/.local/bin}"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
@@ -23,8 +23,8 @@ usage() {
 $APP_NAME installer
 
 Usage:
-  ./install.sh [--autostart|--no-autostart] [--install-dir PATH] [--yes]
-  ./install.sh --uninstall [--yes]
+  ./scripts/install.sh [--autostart|--no-autostart] [--install-dir PATH] [--yes]
+  ./scripts/install.sh --uninstall [--yes]
 
 Options:
   --autostart      enable autostart
@@ -100,8 +100,8 @@ if [ "$UNINSTALL" -eq 1 ]; then
             *) echo "Cancelled"; exit 0 ;;
         esac
     fi
-    if [ -x "$INSTALL_DIR/venv/bin/python" ] && [ -f "$INSTALL_DIR/autostart.py" ]; then
-        "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/autostart.py" disable >/dev/null 2>&1 || true
+    if [ -x "$INSTALL_DIR/venv/bin/python" ] && [ -f "$INSTALL_DIR/app/autostart.py" ]; then
+        "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/app/autostart.py" disable >/dev/null 2>&1 || true
     fi
     rm -f -- "$BIN_DIR/milky" "$DESKTOP_FILE" "$AUTOSTART_FILE" "$ICON_FILE"
     rm -rf -- "$INSTALL_DIR"
@@ -112,23 +112,29 @@ if [ "$UNINSTALL" -eq 1 ]; then
     exit 0
 fi
 
-REQUIRED_FILES=(
+REQUIRED_PATHS=(
     main.py
-    ai_client.py
-    drawing_skill.py
-    image_service.py
-    settings_dialog.py
-    settings_store.py
-    autostart.py
-    runtime.py
-    tts.py
-    svg_art.py
-    clothing_art.py
-    clothing_overlay.py
-    outfit_store.py
+    app/application.py
+    app/addon_api.py
+    app/addon_manager.py
+    app/ai_client.py
+    app/autostart.py
+    app/clothing_art.py
+    app/clothing_overlay.py
+    app/drawing_skill.py
+    app/github_skills.py
+    app/image_service.py
+    app/outfit_store.py
+    app/runtime.py
+    app/screen_vision.py
+    app/settings_dialog.py
+    app/settings_store.py
+    app/svg_art.py
+    app/tts.py
+    app/web_search.py
+    assets/milka_idle.svg
+    assets/gifs
     requirements.txt
-    screen_vision.py
-    milka_idle.svg
 )
 
 if [ "$SOURCE_DIR" = "$INSTALL_DIR" ]; then
@@ -138,20 +144,16 @@ else
 fi
 
 MISSING=()
-for file in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$SOURCE_CHECK_DIR/$file" ]; then
-        MISSING+=("$file")
+for path in "${REQUIRED_PATHS[@]}"; do
+    if [ ! -e "$SOURCE_CHECK_DIR/$path" ]; then
+        MISSING+=("$path")
     fi
 done
-
-if [ ! -d "$SOURCE_CHECK_DIR/gifs" ]; then
-    MISSING+=("gifs/")
-fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo "Cannot install: missing required files in $SOURCE_CHECK_DIR:" >&2
     printf '  - %s\n' "${MISSING[@]}" >&2
-    echo "Run install.sh from the project root (the folder that contains main.py and requirements.txt)." >&2
+    echo "Run scripts/install.sh from the project root (the folder that contains main.py and requirements.txt)." >&2
     exit 1
 fi
 
@@ -187,29 +189,28 @@ mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$APPLICATIONS_DIR" "$ICON_DIR"
 
 if [ "$SOURCE_DIR" != "$INSTALL_DIR" ]; then
     for file in \
-        main.py ai_client.py drawing_skill.py image_service.py \
-        settings_dialog.py settings_store.py screen_vision.py \
-        autostart.py runtime.py tts.py svg_art.py clothing_art.py \
-        clothing_overlay.py outfit_store.py web_search.py \
-        milka_idle.svg requirements.txt \
-        requirements-search.txt README.md LICENSE .env.example
+        main.py requirements.txt requirements-search.txt \
+        README.md LICENSE .env.example
     do
         if [ -f "$SOURCE_DIR/$file" ]; then
             cp -f "$SOURCE_DIR/$file" "$INSTALL_DIR/"
         fi
     done
-    if [ -d "$SOURCE_DIR/gifs" ]; then
-        mkdir -p "$INSTALL_DIR/gifs"
-        cp -R "$SOURCE_DIR/gifs/." "$INSTALL_DIR/gifs/"
-    fi
+    for folder in app assets; do
+        if [ -d "$SOURCE_DIR/$folder" ]; then
+            mkdir -p "$INSTALL_DIR/$folder"
+            cp -R "$SOURCE_DIR/$folder/." "$INSTALL_DIR/$folder/"
+        fi
+    done
+    find "$INSTALL_DIR/app" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 fi
 
 if [ ! -f "$INSTALL_DIR/.env" ] && [ -f "$INSTALL_DIR/.env.example" ]; then
     cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
 fi
 
-if [ -f "$INSTALL_DIR/milka_idle.svg" ]; then
-    cp -f "$INSTALL_DIR/milka_idle.svg" "$ICON_FILE"
+if [ -f "$INSTALL_DIR/assets/milka_idle.svg" ]; then
+    cp -f "$INSTALL_DIR/assets/milka_idle.svg" "$ICON_FILE"
 fi
 
 if [ ! -x "$INSTALL_DIR/venv/bin/python" ]; then
@@ -242,9 +243,9 @@ chmod 755 "$BIN_DIR/milky"
 chmod 644 "$DESKTOP_FILE"
 
 if [ "$AUTOSTART_MODE" = "enable" ]; then
-    "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/autostart.py" enable
+    "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/app/autostart.py" enable
 elif [ "$AUTOSTART_MODE" = "disable" ]; then
-    "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/autostart.py" disable
+    "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/app/autostart.py" disable
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then

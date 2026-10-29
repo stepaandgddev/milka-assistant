@@ -85,7 +85,7 @@ def _desktop_entry():
             "Comment=Animated AI pet",
             f"Exec={command}",
             f"Path={DATA_DIR}",
-            f"Icon={RESOURCE_DIR / 'milka_idle.svg'}",
+            f"Icon={RESOURCE_DIR / 'assets' / 'milka_idle.svg'}",
             "Terminal=false",
             "X-GNOME-Autostart-enabled=true",
             "",
