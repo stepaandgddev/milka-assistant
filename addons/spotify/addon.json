@@ -1,0 +1,9 @@
+{
+  "id": "spotify",
+  "name": "Spotify",
+  "version": "1.1.0",
+  "api": 1,
+  "entry": "addon.py",
+  "description": "Control the local Spotify app on Linux and Windows, with playback status and media controls.",
+  "icon": "assets/icon.svg"
+}
