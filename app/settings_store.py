@@ -29,6 +29,7 @@ DRAWING_PROVIDERS = [
 ]
 
 DRAWING_PROVIDER_VALUES = {value for value, _ in DRAWING_PROVIDERS}
+SEARCH_SAFESEARCH_VALUES = ("on", "moderate", "off")
 
 DEFAULT_CLOUDFLARE_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 
@@ -199,6 +200,145 @@ def normalize_drawing(raw):
     }
 
 
+def default_life():
+    return {
+        "enabled": _env_bool("LIFE_ENABLED", True),
+        "suggest_outfit": _env_bool("LIFE_SUGGEST_OUTFIT", True),
+        "draw": _env_bool("LIFE_DRAW", True),
+        "min_minutes": _int_value(
+            os.environ.get("LIFE_MIN_MINUTES", "10"), 10, 1, 1440
+        ),
+        "max_minutes": _int_value(
+            os.environ.get("LIFE_MAX_MINUTES", "30"), 30, 1, 1440
+        ),
+    }
+
+
+def normalize_life(raw):
+    defaults = default_life()
+    if not isinstance(raw, dict):
+        return defaults
+
+    minimum = _int_value(
+        raw.get("min_minutes", defaults["min_minutes"]),
+        defaults["min_minutes"],
+        1,
+        1440,
+    )
+    maximum = _int_value(
+        raw.get("max_minutes", defaults["max_minutes"]),
+        defaults["max_minutes"],
+        1,
+        1440,
+    )
+    if maximum < minimum:
+        maximum = minimum
+
+    return {
+        "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "suggest_outfit": bool(
+            raw.get("suggest_outfit", defaults["suggest_outfit"])
+        ),
+        "draw": bool(raw.get("draw", defaults["draw"])),
+        "min_minutes": minimum,
+        "max_minutes": maximum,
+    }
+
+
+def default_search():
+    safesearch = os.environ.get("SEARCH_SAFESEARCH", "moderate").strip().lower()
+    if safesearch not in SEARCH_SAFESEARCH_VALUES:
+        safesearch = "moderate"
+    return {
+        "enabled": _env_bool("SEARCH_ENABLED", True),
+        "max_results": _int_value(
+            os.environ.get("SEARCH_MAX_RESULTS", "5"), 5, 1, 10
+        ),
+        "region": os.environ.get("SEARCH_REGION", "ru-ru").strip() or "ru-ru",
+        "safesearch": safesearch,
+        "google": _env_bool("SEARCH_GOOGLE", True),
+        "youtube": _env_bool("SEARCH_YOUTUBE", True),
+    }
+
+
+def normalize_search(raw):
+    defaults = default_search()
+    if not isinstance(raw, dict):
+        return defaults
+
+    safesearch = str(
+        raw.get("safesearch", defaults["safesearch"])
+    ).strip().lower()
+    if safesearch not in SEARCH_SAFESEARCH_VALUES:
+        safesearch = defaults["safesearch"]
+    region = str(raw.get("region", defaults["region"])).strip()
+    return {
+        "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "max_results": _int_value(
+            raw.get("max_results", defaults["max_results"]),
+            defaults["max_results"],
+            1,
+            10,
+        ),
+        "region": region or defaults["region"],
+        "safesearch": safesearch,
+        "google": bool(raw.get("google", defaults["google"])),
+        "youtube": bool(raw.get("youtube", defaults["youtube"])),
+    }
+
+
+def default_history():
+    return {
+        "limit": _int_value(
+            os.environ.get("AI_HISTORY_LIMIT", "20"), 20, 2, 100
+        ),
+        "keep_recent": _int_value(
+            os.environ.get("HISTORY_KEEP_RECENT", "6"), 6, 2, 20
+        ),
+    }
+
+
+def normalize_history(raw):
+    defaults = default_history()
+    if not isinstance(raw, dict):
+        return defaults
+    return {
+        "limit": _int_value(
+            raw.get("limit", defaults["limit"]),
+            defaults["limit"],
+            2,
+            100,
+        ),
+        "keep_recent": _int_value(
+            raw.get("keep_recent", defaults["keep_recent"]),
+            defaults["keep_recent"],
+            2,
+            20,
+        ),
+    }
+
+
+def default_addons():
+    return {"disabled": [], "settings": {}}
+
+
+def normalize_addons(raw):
+    if not isinstance(raw, dict):
+        return default_addons()
+    disabled = []
+    for item in raw.get("disabled") or []:
+        text = str(item).strip()
+        if text and text not in disabled:
+            disabled.append(text)
+    raw_settings = raw.get("settings")
+    per_addon = {}
+    if isinstance(raw_settings, dict):
+        for key, value in raw_settings.items():
+            if isinstance(value, dict):
+                per_addon[str(key)] = value
+    return {"disabled": sorted(disabled), "settings": per_addon}
+
+
 def normalize_tts(raw):
     defaults = default_tts()
     if not isinstance(raw, dict):
@@ -287,6 +427,10 @@ def default_settings():
         "tts": default_tts(),
         "drawing": default_drawing(),
         "vision": vision,
+        "life": default_life(),
+        "search": default_search(),
+        "history": default_history(),
+        "addons": default_addons(),
     }
 
 
@@ -363,6 +507,10 @@ def load_settings():
         "tts": normalize_tts(data.get("tts")),
         "drawing": normalize_drawing(data.get("drawing")),
         "vision": vision,
+        "life": normalize_life(data.get("life")),
+        "search": normalize_search(data.get("search")),
+        "history": normalize_history(data.get("history")),
+        "addons": normalize_addons(data.get("addons")),
     }
 
 

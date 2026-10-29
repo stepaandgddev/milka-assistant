@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - master
+      - main
     tags:
       - "v*"
 
@@ -32,16 +33,24 @@ jobs:
 
       - name: Verify sources
         run: |
-          python -m py_compile ai_client.py autostart.py clothing_art.py clothing_overlay.py drawing_skill.py image_service.py main.py outfit_store.py runtime.py screen_vision.py settings_dialog.py settings_store.py svg_art.py tts.py web_search.py
+          python -m compileall -q main.py app
+          python -m json.tool docs/extension-shop-firebase.json > $null
+
+      - name: Run smoke tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "import sys; sys.path.insert(0, 'app'); import addon_manager, settings_dialog, extension_shop; print('Milky imports OK')"
 
       - name: Build executable
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --clean --windowed --name Milky `
-            --icon milka_idle.ico `
+            --paths app `
+            --icon assets/milka_idle.ico `
             --hidden-import PySide6.QtSvg `
-            --add-data "gifs;gifs" `
-            --add-data "milka_idle.svg;." `
+            --hidden-import PySide6.QtNetwork `
+            --add-data "assets;assets" `
             main.py
 
       - name: Create archive

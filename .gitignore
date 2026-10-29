@@ -2,6 +2,8 @@
 __pycache__/
 *.py[codz]
 *$py.class
+# Addons are installed locally and published in separate repositories.
+addons/
 
 # C extensions
 *.so

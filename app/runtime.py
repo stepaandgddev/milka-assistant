@@ -9,7 +9,7 @@ if FROZEN:
         getattr(sys, "_MEIPASS", EXECUTABLE_DIR)
     ).resolve()
 else:
-    EXECUTABLE_DIR = Path(__file__).resolve().parent
+    EXECUTABLE_DIR = Path(__file__).resolve().parent.parent
     RESOURCE_DIR = EXECUTABLE_DIR
 
 DATA_DIR = EXECUTABLE_DIR

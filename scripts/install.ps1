@@ -9,7 +9,7 @@
 
 $ErrorActionPreference = 'Stop'
 $AppName = 'Milky'
-$SourceDir = $PSScriptRoot
+$SourceDir = Split-Path -Parent $PSScriptRoot
 $ProgramsDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $ShortcutPath = Join-Path $ProgramsDir 'Milky.lnk'
 $StartupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
@@ -21,8 +21,8 @@ function Show-Usage {
 Milky installer
 
 Usage:
-  .\install.ps1 [-Autostart|-NoAutostart] [-InstallDir PATH] [-Yes]
-  .\install.ps1 -Uninstall [-Yes]
+  .\scripts\install.ps1 [-Autostart|-NoAutostart] [-InstallDir PATH] [-Yes]
+  .\scripts\install.ps1 -Uninstall [-Yes]
 
 Options:
   -Autostart      enable autostart
@@ -44,7 +44,7 @@ if ($Autostart -and $NoAutostart) {
 }
 
 if (-not $SourceDir) {
-    throw 'Run install.ps1 from the project directory'
+    throw 'Run scripts\install.ps1 from the project directory'
 }
 
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
@@ -77,7 +77,7 @@ if ($Uninstall) {
         }
     }
     $VenvPython = Join-Path $InstallDir 'venv\Scripts\python.exe'
-    $AutostartScript = Join-Path $InstallDir 'autostart.py'
+    $AutostartScript = Join-Path $InstallDir 'app\autostart.py'
     if ((Test-Path $VenvPython) -and (Test-Path $AutostartScript)) {
         & $VenvPython $AutostartScript disable 2>$null | Out-Null
     }
@@ -124,57 +124,45 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Python 3.10 or newer is required.'
 }
 
-$requiredFiles = @(
+$requiredPaths = @(
     'main.py',
-    'ai_client.py',
-    'drawing_skill.py',
-    'image_service.py',
-    'settings_dialog.py',
-    'settings_store.py',
-    'autostart.py',
-    'runtime.py',
-    'tts.py',
-    'svg_art.py',
-    'clothing_art.py',
-    'clothing_overlay.py',
-    'outfit_store.py',
-    'screen_vision.py',
-    'requirements.txt',
-    'milka_idle.svg'
+    'app\application.py',
+    'app\addon_api.py',
+    'app\addon_manager.py',
+    'app\ai_client.py',
+    'app\autostart.py',
+    'app\clothing_art.py',
+    'app\clothing_overlay.py',
+    'app\drawing_skill.py',
+    'app\github_skills.py',
+    'app\image_service.py',
+    'app\outfit_store.py',
+    'app\runtime.py',
+    'app\screen_vision.py',
+    'app\settings_dialog.py',
+    'app\settings_store.py',
+    'app\svg_art.py',
+    'app\tts.py',
+    'app\web_search.py',
+    'assets\milka_idle.svg',
+    'assets\gifs',
+    'requirements.txt'
 )
 $sourceCheckDir = if ($SourceDir -eq $InstallDir) { $InstallDir } else { $SourceDir }
 $missingFiles = @()
-foreach ($file in $requiredFiles) {
-    if (-not (Test-Path (Join-Path $sourceCheckDir $file))) {
-        $missingFiles += $file
+foreach ($path in $requiredPaths) {
+    if (-not (Test-Path (Join-Path $sourceCheckDir $path))) {
+        $missingFiles += $path
     }
 }
-if (-not (Test-Path (Join-Path $sourceCheckDir 'gifs'))) {
-    $missingFiles += 'gifs\'
-}
 if ($missingFiles.Count -gt 0) {
-    throw "Cannot install: missing required files in $sourceCheckDir: $($missingFiles -join ', '). Run install.ps1 from the project root."
+    throw "Cannot install: missing required files in $sourceCheckDir: $($missingFiles -join ', '). Run scripts\install.ps1 from the project root."
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
 $files = @(
     'main.py',
-    'ai_client.py',
-    'drawing_skill.py',
-    'image_service.py',
-    'settings_dialog.py',
-    'settings_store.py',
-    'autostart.py',
-    'runtime.py',
-    'tts.py',
-    'svg_art.py',
-    'clothing_art.py',
-    'clothing_overlay.py',
-    'outfit_store.py',
-    'screen_vision.py',
-    'web_search.py',
-    'milka_idle.svg',
     'requirements.txt',
     'requirements-search.txt',
     'README.md',
@@ -190,12 +178,16 @@ if ($SourceDir -ne $InstallDir) {
         }
     }
 
-    $gifsSource = Join-Path $SourceDir 'gifs'
-    if (Test-Path $gifsSource) {
-        $gifsTarget = Join-Path $InstallDir 'gifs'
-        New-Item -ItemType Directory -Force -Path $gifsTarget | Out-Null
-        Copy-Item -Path (Join-Path $gifsSource '*') -Destination $gifsTarget -Recurse -Force
+    foreach ($folder in @('app', 'assets')) {
+        $source = Join-Path $SourceDir $folder
+        if (Test-Path $source) {
+            $target = Join-Path $InstallDir $folder
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+        }
     }
+    Get-ChildItem -Path (Join-Path $InstallDir 'app') -Directory -Filter '__pycache__' -Recurse -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $envFile = Join-Path $InstallDir '.env'
@@ -220,8 +212,8 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Could not install dependencies'
 }
 
-$env:MILKY_ICON_SOURCE = Join-Path $InstallDir 'milka_idle.svg'
-$env:MILKY_ICON_TARGET = Join-Path $InstallDir 'milka_idle.ico'
+$env:MILKY_ICON_SOURCE = Join-Path $InstallDir 'assets\milka_idle.svg'
+$env:MILKY_ICON_TARGET = Join-Path $InstallDir 'assets\milka_idle.ico'
 $iconScript = @'
 import os
 from PySide6.QtGui import QImage
@@ -252,13 +244,13 @@ $shortcut.TargetPath = $VenvPythonw
 $shortcut.Arguments = '"' + (Join-Path $InstallDir 'main.py') + '"'
 $shortcut.WorkingDirectory = $InstallDir
 $shortcut.Description = 'Milky AI pet'
-$iconPath = Join-Path $InstallDir 'milka_idle.ico'
+$iconPath = Join-Path $InstallDir 'assets\milka_idle.ico'
 if (Test-Path $iconPath) {
     $shortcut.IconLocation = "$iconPath,0"
 }
 $shortcut.Save()
 
-$AutostartScript = Join-Path $InstallDir 'autostart.py'
+$AutostartScript = Join-Path $InstallDir 'app\autostart.py'
 if ($AutostartMode -eq 'enable') {
     & $VenvPython $AutostartScript enable
     if ($LASTEXITCODE -ne 0) {

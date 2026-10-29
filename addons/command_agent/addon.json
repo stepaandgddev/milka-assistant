@@ -1,0 +1,9 @@
+{
+  "id": "command_agent",
+  "name": "Command Agent",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "addon.py",
+  "description": "Run shell commands and let a small agent inspect output, retry, and report back across several steps.",
+  "icon": "assets/icon.svg"
+}

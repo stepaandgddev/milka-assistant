@@ -1,0 +1,9 @@
+{
+  "id": "spotify",
+  "name": "Spotify",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "addon.py",
+  "description": "Control the local Spotify app through MPRIS and show a headphones animation while music is playing.",
+  "icon": "assets/icon.svg"
+}

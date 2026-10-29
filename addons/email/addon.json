@@ -1,0 +1,103 @@
+{
+  "id": "email",
+  "name": "Email",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "addon.py",
+  "description": "Send and receive email through configurable SMTP and IMAP accounts.",
+  "icon": "assets/icon.svg",
+  "settings": [
+    {
+      "key": "email_address",
+      "label": "Email address",
+      "type": "string",
+      "placeholder": "you@example.com",
+      "description": "Account address used as the sender and default mailbox."
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "type": "string",
+      "placeholder": "Usually your email address"
+    },
+    {
+      "key": "password",
+      "label": "Password or app password",
+      "type": "string",
+      "secret": true,
+      "description": "Use an app password when your provider supports or requires one."
+    },
+    {
+      "key": "smtp_host",
+      "label": "SMTP host",
+      "type": "string",
+      "default": "smtp.gmail.com"
+    },
+    {
+      "key": "smtp_port",
+      "label": "SMTP port",
+      "type": "int",
+      "default": 465,
+      "min": 1,
+      "max": 65535
+    },
+    {
+      "key": "smtp_security",
+      "label": "SMTP security",
+      "type": "select",
+      "default": "ssl",
+      "options": [
+        {"value": "ssl", "label": "SSL/TLS"},
+        {"value": "starttls", "label": "STARTTLS"},
+        {"value": "none", "label": "None"}
+      ]
+    },
+    {
+      "key": "imap_host",
+      "label": "IMAP host",
+      "type": "string",
+      "default": "imap.gmail.com"
+    },
+    {
+      "key": "imap_port",
+      "label": "IMAP port",
+      "type": "int",
+      "default": 993,
+      "min": 1,
+      "max": 65535
+    },
+    {
+      "key": "imap_security",
+      "label": "IMAP security",
+      "type": "select",
+      "default": "ssl",
+      "options": [
+        {"value": "ssl", "label": "SSL/TLS"},
+        {"value": "none", "label": "None"}
+      ]
+    },
+    {
+      "key": "imap_verify_certificate",
+      "label": "Verify IMAP certificate",
+      "type": "bool",
+      "default": false,
+      "description": "Disable only for a trusted local server with a self-signed certificate."
+    },
+    {
+      "key": "mailbox",
+      "label": "Mailbox",
+      "type": "string",
+      "default": "INBOX"
+    },
+    {
+      "key": "max_message_chars",
+      "label": "Maximum message size",
+      "type": "int",
+      "default": 12000,
+      "min": 1000,
+      "max": 50000,
+      "step": 1000,
+      "suffix": " chars"
+    }
+  ]
+}

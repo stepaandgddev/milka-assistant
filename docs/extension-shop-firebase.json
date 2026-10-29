@@ -1,0 +1,32 @@
+{
+  "shop": {
+    "config": {
+      "catalog_version": 1,
+      "title": "Milky Extension Store",
+      "enabled": true
+    },
+    "featured": {
+      "email": true
+    },
+    "categories": {
+      "productivity": {"name": "Productivity", "icon": "⚙️"},
+      "media": {"name": "Media", "icon": "🎵"},
+      "communication": {"name": "Communication", "icon": "💬"},
+      "tools": {"name": "Tools", "icon": "🧰"}
+    },
+    "extensions": {
+      "email": {
+        "name": "Email",
+        "description": "Send and receive email through SMTP and IMAP.",
+        "author": "Milky Community",
+        "version": "1.0.0",
+        "category": "communication",
+        "repo": "stepaandgddev/milky-email-addon",
+        "icon": "https://raw.githubusercontent.com/stepaandgddev/milky-email-addon/main/assets/icon.svg",
+        "preview": "",
+        "published": true
+      }
+    },
+    "announcements": {}
+  }
+}
