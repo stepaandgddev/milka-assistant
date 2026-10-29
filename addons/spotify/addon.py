@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import inspect
 import re
 import shutil
 import subprocess
@@ -143,7 +144,10 @@ class LocalSpotify:
     @staticmethod
     def _windows_call(operation):
         """Run a WinRT async operation without requiring an event loop."""
-        return asyncio.run(operation())
+        result = operation()
+        if inspect.isawaitable(result):
+            return asyncio.run(result)
+        return result
 
     def _windows_session(self):
         if _MediaManager is None:
@@ -153,13 +157,23 @@ class LocalSpotify:
         manager = self._windows_call(_MediaManager.request_async)
         sessions = manager.get_sessions()
         for session in sessions:
-            source = str(session.source_app_user_model_id or "").lower()
-            if "spotify" in source:
+            source = str(
+                getattr(session, "source_app_user_model_id", "") or ""
+            ).lower()
+            # Store and classic Spotify builds expose different AUMIDs, for
+            # example SpotifyAB.SpotifyMusic_... and Spotify.exe. Do not rely
+            # on one exact package identifier.
+            if "spotify" in source or "spotify" in str(session).lower():
                 return session
         return None
 
     def _windows_now_playing(self) -> dict[str, Any]:
-        session = self._windows_session()
+        try:
+            session = self._windows_session()
+        except SpotifyError:
+            raise
+        except Exception as error:
+            raise SpotifyError(f"Windows media session error: {error}") from error
         if session is None:
             return {"connected": False}
         try:
@@ -175,8 +189,8 @@ class LocalSpotify:
                 "artist": str(properties.artist or ""),
                 "album": str(properties.album_title or ""),
             }
-        except Exception:
-            return {"connected": False}
+        except Exception as error:
+            raise SpotifyError(f"Could not read Spotify media session: {error}") from error
 
     @staticmethod
     def _run(args: list[str]) -> str:
@@ -522,10 +536,7 @@ def _label(info: dict[str, Any], include_status: bool = True) -> str:
 
 def _sync_animation(ctx, info: dict[str, Any] | None = None) -> dict[str, Any]:
     if info is None:
-        try:
-            info = _spotify.now_playing()
-        except Exception:
-            info = {}
+        info = _spotify.now_playing()
     if info.get("playing"):
         _show_music_animation(ctx)
     else:
@@ -547,7 +558,10 @@ _watcher: _PlayingWatcher | None = None
     "Return Spotify playback status and the current track.",
 )
 def current_track(ctx):
-    info = _sync_animation(ctx)
+    try:
+        info = _sync_animation(ctx)
+    except SpotifyError as error:
+        return str(error)
     if not info.get("connected"):
         if os.name == "nt":
             return (
