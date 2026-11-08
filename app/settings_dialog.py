@@ -56,6 +56,7 @@ from github_skills import (
     parse_github_url,
 )
 from outfit_store import SLOT_LABELS, load_outfit, save_outfit
+from memory_graph_widget import MemoryGraphWidget
 from settings_store import (
     DRAWING_PROVIDERS,
     PROVIDER_TYPES,
@@ -360,6 +361,12 @@ class SettingsDialog(QDialog):
         self.life_enabled_check = QCheckBox(
             "Let Milky do little things on her own"
         )
+        self.startup_greeting_check = QCheckBox(
+            "Say a creative greeting when Milky starts"
+        )
+        self.initiative_combo = QComboBox()
+        for value, label in (("off", "Off"), ("rare", "Rare"), ("sometimes", "Sometimes"), ("often", "Often")):
+            self.initiative_combo.addItem(label, value)
         self.life_outfit_check = QCheckBox(
             "Sometimes suggest a new outfit"
         )
@@ -392,6 +399,8 @@ class SettingsDialog(QDialog):
         life_hint.setStyleSheet("color: #777;")
 
         life_form.addRow(self.life_enabled_check)
+        life_form.addRow(self.startup_greeting_check)
+        life_form.addRow("Start conversations", self.initiative_combo)
         life_form.addRow(self.life_outfit_check)
         life_form.addRow(self.life_draw_check)
         life_form.addRow("Interval", life_interval_widget)
@@ -435,6 +444,67 @@ class SettingsDialog(QDialog):
         outfit_buttons.addStretch()
         outfit_layout.addLayout(outfit_buttons)
         tabs.addTab(outfit_tab, "Outfit")
+
+        memory_tab = QWidget()
+        memory_layout = QVBoxLayout(memory_tab)
+        memory_graph = MemoryGraphWidget()
+        memory_layout.addWidget(QLabel("Milky's memory graph"))
+        memory_filters = QHBoxLayout()
+        memory_search = QLineEdit()
+        memory_search.setPlaceholderText("Search key, value, category or tag...")
+        memory_results = QLabel("All memories")
+        memory_results.setStyleSheet("color: #777;")
+        memory_type = QComboBox()
+        memory_type.addItem("All types", "all")
+        for value, label in (
+            ("person", "People"),
+            ("location", "Places"),
+            ("interest", "Interests"),
+            ("preference", "Preferences"),
+            ("work", "Work"),
+            ("fact", "Other facts"),
+        ):
+            memory_type.addItem(label, value)
+        memory_clear = QPushButton("Clear")
+        def update_memory_search(text):
+            memory_graph.search(text)
+            count = memory_graph.search_count()
+            memory_results.setText(
+                f"{count} {'memory' if count == 1 else 'memories'} found"
+                if text.strip() else "All memories"
+            )
+        memory_search.textChanged.connect(update_memory_search)
+        memory_type.currentIndexChanged.connect(
+            lambda _index: memory_graph.set_type_filter(memory_type.currentData())
+        )
+        memory_clear.clicked.connect(
+            lambda: (memory_search.clear(), memory_type.setCurrentIndex(0))
+        )
+        memory_filters.addWidget(memory_search, 1)
+        memory_filters.addWidget(memory_type)
+        memory_filters.addWidget(memory_clear)
+        memory_layout.addLayout(memory_filters)
+        memory_layout.addWidget(memory_results)
+        memory_delete = QPushButton("Delete selected memory")
+        memory_delete.setEnabled(False)
+        memory_graph.node_selected.connect(lambda node: memory_delete.setEnabled(True))
+        def delete_memory_node():
+            if memory_graph.delete_selected():
+                memory_delete.setEnabled(False)
+        memory_delete.clicked.connect(delete_memory_node)
+        memory_layout.addWidget(memory_delete)
+        memory_history = QPlainTextEdit()
+        memory_history.setReadOnly(True)
+        memory_history.setPlaceholderText("Memory changes will appear here.")
+        memory_history.setPlainText(memory_graph.history_text())
+        memory_layout.addWidget(QLabel("Memory history"))
+        memory_layout.addWidget(memory_history)
+        memory_layout.addWidget(memory_graph)
+        memory_hint = QLabel("Узлы показывают факты, рёбра — связи между ними. Цвета: люди, места, интересы, предпочтения, работа.")
+        memory_hint.setWordWrap(True)
+        memory_hint.setStyleSheet("color: #777; font-size: 11px;")
+        memory_layout.addWidget(memory_hint)
+        tabs.addTab(memory_tab, "Memory")
 
         search_scroll = QScrollArea()
         search_scroll.setWidgetResizable(True)
@@ -1091,6 +1161,11 @@ class SettingsDialog(QDialog):
         self.life_enabled_check.setChecked(
             bool(self._life.get("enabled", True))
         )
+        self.startup_greeting_check.setChecked(
+            bool(self._life.get("startup_greeting", True))
+        )
+        index = self.initiative_combo.findData(self._life.get("initiative", "off"))
+        self.initiative_combo.setCurrentIndex(max(0, index))
         self.life_outfit_check.setChecked(
             bool(self._life.get("suggest_outfit", True))
         )
@@ -1116,6 +1191,8 @@ class SettingsDialog(QDialog):
             self._loading = False
         self._life = {
             "enabled": self.life_enabled_check.isChecked(),
+            "startup_greeting": self.startup_greeting_check.isChecked(),
+            "initiative": self.initiative_combo.currentData(),
             "suggest_outfit": self.life_outfit_check.isChecked(),
             "draw": self.life_draw_check.isChecked(),
             "min_minutes": minimum,

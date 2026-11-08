@@ -226,10 +226,12 @@ __marimo__/
 # Local user data and generated content
 avatar.png
 memory.json
+memory_history.json
 history.json
 settings.json
 outfit.json
 outfit.json.tmp
+room.json
 svg_drawings/
 .DS_Store
 Thumbs.db

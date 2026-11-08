@@ -203,6 +203,8 @@ def normalize_drawing(raw):
 def default_life():
     return {
         "enabled": _env_bool("LIFE_ENABLED", True),
+        "startup_greeting": _env_bool("STARTUP_GREETING", True),
+        "initiative": os.environ.get("MILKY_INITIATIVE", "off"),
         "suggest_outfit": _env_bool("LIFE_SUGGEST_OUTFIT", True),
         "draw": _env_bool("LIFE_DRAW", True),
         "min_minutes": _int_value(
@@ -234,8 +236,13 @@ def normalize_life(raw):
     if maximum < minimum:
         maximum = minimum
 
+    initiative = str(raw.get("initiative", defaults["initiative"])).lower()
+    if initiative not in ("off", "rare", "sometimes", "often"):
+        initiative = "off"
     return {
         "enabled": bool(raw.get("enabled", defaults["enabled"])),
+        "startup_greeting": bool(raw.get("startup_greeting", defaults["startup_greeting"])),
+        "initiative": initiative,
         "suggest_outfit": bool(
             raw.get("suggest_outfit", defaults["suggest_outfit"])
         ),

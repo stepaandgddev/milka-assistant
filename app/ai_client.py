@@ -12,6 +12,7 @@ from addon_manager import (
     call_addon_tool,
     is_addon_tool,
 )
+from room_store import update_room_from_request
 from clothing_art import (
     CLOTHING_REFERENCE,
     wants_clothing,
@@ -264,6 +265,11 @@ Links and search:
 - search_query — only when the user explicitly asks to open a Google search page. Do not use it instead of the search tools.
 - In text, briefly say what you found or opened. Do not claim to have read any result before the tool returned it.
 
+The change_room tool:
+- Use this when the user asks to add, remove, rearrange, or change something in Milky's room.
+- instruction — describe what the user wants in the room, e.g. "add an aquarium", "put plants", "remove the sofa".
+- Call respond after using change_room to acknowledge the change.
+
 Addon tools:
 - Tools whose names start with addon__ come from installed Milky addons. Use one when it directly helps with the request.
 - If the user asks to play a song or track and a music addon tool exists, use it with the song title and artist.
@@ -434,6 +440,27 @@ TOOLS = [
                     },
                 },
                 "required": ["text", "emotion"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "change_room",
+            "description": (
+                "Change Milky's room when the user asks her to add, remove, or "
+                "rearrange something. This is Milky's own room; use the user's "
+                "request as a concise design instruction."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "instruction": {
+                        "type": "string",
+                        "description": "What to change in the room.",
+                    },
+                },
+                "required": ["instruction"],
             },
         },
     },
@@ -1622,6 +1649,15 @@ def tool_result_message(provider, call, content="Done."):
     return {"role": "tool", "tool_name": name, "content": content}
 
 
+def execute_builtin_tool(name, arguments):
+    if name == "change_room":
+        instruction = str(arguments.get("instruction") or "").strip()
+        if not instruction:
+            return "No room change was specified."
+        return update_room_from_request(instruction)
+    return "Done."
+
+
 def _search_call_query(call):
     function = call.get("function") or {}
     name = str(function.get("name") or "")
@@ -2082,6 +2118,15 @@ def chat(
                             provider,
                             call,
                             call_addon_tool(name, _tool_call_arguments(call)),
+                        )
+                    )
+                    continue
+                if name == "change_room":
+                    messages.append(
+                        tool_result_message(
+                            provider,
+                            call,
+                            execute_builtin_tool(name, _tool_call_arguments(call)),
                         )
                     )
                     continue

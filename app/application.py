@@ -85,6 +85,8 @@ from outfit_store import infer_slot, load_outfit, save_outfit, wear_item
 from runtime import data_path, resource_path
 from screen_vision import ScreenCaptureError, capture_screen
 from settings_dialog import SettingsDialog
+from room_dialog import RoomDialog
+from memory_graph import record_memory_change
 from settings_store import active_provider, load_settings, vision_provider
 from svg_art import (
     asked_to_draw,
@@ -321,6 +323,7 @@ class MainWindow(QMainWindow):
         self._reply_gif = "milka_idle.gif"
         self._toast = None
         self._life_toast = None
+        self._startup_greeting = True
 
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
@@ -341,9 +344,49 @@ class MainWindow(QMainWindow):
         self._life_timer = QTimer(self)
         self._life_timer.setSingleShot(True)
         self._life_timer.timeout.connect(self._life_tick)
+        self._initiative_timer = QTimer(self)
+        self._initiative_timer.setSingleShot(True)
+        self._initiative_timer.timeout.connect(self._initiative_tick)
+
 
         self.setup_tray()
         self._schedule_life(first=True)
+        self._schedule_initiative()
+        if self._life_settings.get("startup_greeting", True):
+            QTimer.singleShot(900, self._request_startup_greeting)
+
+    def _request_startup_greeting(self):
+        """Ask Milky for a fresh, brief greeting after the window starts."""
+        if not self._startup_greeting or self._worker is not None:
+            return
+        self._last_user_text = ""
+        remembered_name = str(self._memory.get("user_name", "")).strip()
+        name_hint = (
+            f"The user's name is {remembered_name}; address them by name naturally."
+            if remembered_name
+            else "If no name is remembered, do not invent one."
+        )
+        worker = ChatWorker(
+            "Create a creative, natural startup greeting for the user. "
+            "You are Milky, not a service or an app. Never say 'welcome to our "
+            "service', 'welcome to the application', or anything corporate. "
+            "You may say hello, address the user by remembered name, ask how "
+            "they are, mention the morning/night or a playful thought, and vary "
+            "the wording every launch. Keep it to one short sentence, use the "
+            "user's usual language, and do not use tools. " + name_hint,
+            list(self._history),
+            dict(self._memory),
+            self._provider,
+            self,
+            image_settings=self._drawing_settings,
+            vision_provider=self._vision_settings,
+        )
+        self._worker = worker
+        worker.replied.connect(lambda result, w=worker: self.show_reply(w, result))
+        worker.failed.connect(lambda error, w=worker: self.show_error(w, error))
+        worker.finished.connect(lambda w=worker: self.clear_worker(w))
+        self.set_gif("milka_thinking.gif")
+        worker.start()
 
     def showEvent(self, event: QShowEvent):
         super().showEvent(event)
@@ -421,12 +464,44 @@ class MainWindow(QMainWindow):
                 self.hide_input("milka_idle.gif")
                 self._apply_history_action(action, text)
                 return
+            memory_action = self._memory_command(text)
+            if memory_action:
+                self.hide_input("milka_idle.gif")
+                self.show_status(memory_action)
+                return
 
         if wants_screen_view(text):
             self._ask_screen_question(text)
             return
 
         self._submit_message(text)
+
+    def _memory_command(self, text):
+        """Handle explicit memory management locally and deterministically."""
+        value = " ".join(str(text or "").split()).strip()
+        lowered = value.casefold()
+        if not any(token in lowered for token in ("memory", "памят", "запомни", "забудь")):
+            return None
+        if re.search(r"^(what do you remember|что ты обо мне помнишь|покажи память)", lowered):
+            if not self._memory:
+                return "Я пока ничего важного о тебе не помню."
+            facts = "; ".join(f"{key}: {val}" for key, val in self._memory.items())
+            return f"Я помню: {facts}"
+        forget = re.match(r"^(?:забудь|forget)\s+([^:]+)(?::|\s|$)(.*)$", value, re.I)
+        if forget:
+            key = re.sub(r"\s+", "_", forget.group(1).strip().casefold())
+            removed = self._memory.pop(key, None)
+            save_memory(self._memory)
+            return f"Забыла {key}." if removed is not None else f"Я не находила в памяти {key}."
+        remember = re.match(r"^(?:запомни|remember)\s+([^:]+?)(?:\s*:\s*|\s+это\s+)(.+)$", value, re.I)
+        if remember:
+            key = re.sub(r"\s+", "_", remember.group(1).strip().casefold())
+            fact = remember.group(2).strip()[:200]
+            if key and fact:
+                self._memory[key] = fact
+                save_memory(self._memory)
+                return f"Запомнила: {key} — {fact}"
+        return None
 
     def _ask_screen_question(self, request):
         """Ask what to look for before taking a screenshot."""
@@ -584,6 +659,7 @@ class MainWindow(QMainWindow):
         if memories:
             for item in memories:
                 self._memory[item["key"]] = item["value"]
+                record_memory_change("updated", item["key"], item["value"])
             save_memory(self._memory)
         search_query = result.get("search_query")
         urls = []
@@ -695,6 +771,36 @@ class MainWindow(QMainWindow):
         minimum = max(1, minimum)
         maximum = max(minimum, maximum)
         return random.randint(minimum, maximum) * 60 * 1000
+
+    def _schedule_initiative(self):
+        self._initiative_timer.stop()
+        mode = self._life_settings.get("initiative", "off")
+        if mode == "off":
+            return
+        ranges = {"rare": (90, 180), "sometimes": (45, 90), "often": (20, 45)}
+        low, high = ranges.get(mode, (90, 180))
+        self._initiative_timer.start(random.randint(low, high) * 60 * 1000)
+
+    def _initiative_tick(self):
+        self._schedule_initiative()
+        if (
+            self._worker is not None or self.input.isVisible() or
+            self.bubble.isVisible() or not self.isVisible()
+        ):
+            return
+        self._last_user_text = ""
+        worker = ChatWorker(
+            "Start a brief friendly conversation with the user. Say one natural sentence in their usual language. Do not sound corporate, do not mention being an AI, and do not ask for a task.",
+            list(self._history), dict(self._memory), self._provider, self,
+            image_settings=self._drawing_settings,
+            vision_provider=self._vision_settings,
+        )
+        self._worker = worker
+        worker.replied.connect(lambda result, w=worker: self.show_reply(w, result))
+        worker.failed.connect(lambda error, w=worker: self.show_error(w, error))
+        worker.finished.connect(lambda w=worker: self.clear_worker(w))
+        self.set_gif("milka_thinking.gif")
+        worker.start()
 
     def _schedule_life(self, first=False):
         self._life_timer.stop()
@@ -930,6 +1036,8 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self.open_settings)
         look_action = menu.addAction("Look at screen")
         look_action.triggered.connect(self.look_at_screen)
+        room_action = menu.addAction("Milky's Room")
+        room_action.triggered.connect(self.show_room)
         svg_action = menu.addAction("Show drawing gallery")
         svg_action.triggered.connect(self.show_svg_gallery)
         menu.addSeparator()
@@ -1474,12 +1582,18 @@ class MainWindow(QMainWindow):
         settings_action.triggered.connect(self.open_settings)
         look_action = menu.addAction("Look at screen")
         look_action.triggered.connect(self.look_at_screen)
+        room_action = menu.addAction("Milky's Room")
+        room_action.triggered.connect(self.show_room)
         toggle_action = menu.addAction("Show / Hide")
         toggle_action.triggered.connect(self.toggle_window)
         menu.addSeparator()
         quit_action = menu.addAction("Quit")
         quit_action.triggered.connect(self.quit_app)
         menu.exec(event.globalPos())
+
+    def show_room(self):
+        room = RoomDialog(self)
+        room.exec()
 
     def shutdown(self):
         if self._worker is not None and self._worker.isRunning():
